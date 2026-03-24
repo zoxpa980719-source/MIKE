@@ -202,14 +202,10 @@ export default function LoginPage() {
             href="/"
             className="flex items-center gap-2 text-lg font-semibold"
           >
-            <Image
-              src="https://i.postimg.cc/nLrDYrHW/icon.png"
-              alt="CareerCompass logo"
-              width={32}
-              height={32}
-              className="bg-white/10 backdrop-blur-sm p-1 rounded-lg"
-            />
-            <span>CareerCompass</span>
+            {/* 替换了左侧大屏幕的Logo */}
+            <span className="text-2xl font-extrabold tracking-[0.25em] uppercase text-foreground drop-shadow-sm">
+              YINHNG
+            </span>
           </Link>
         </div>
 
@@ -247,14 +243,10 @@ export default function LoginPage() {
         <div className="w-full max-w-[420px]">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center gap-2 text-lg font-semibold mb-12">
-            <Image
-              src="https://i.postimg.cc/nLrDYrHW/icon.png"
-              alt="CareerCompass logo"
-              width={32}
-              height={32}
-              className="dark:bg-white dark:p-1 dark:rounded-md"
-            />
-            <span>CareerCompass</span>
+            {/* 替换了移动端小屏幕的Logo */}
+            <span className="text-2xl font-extrabold tracking-[0.25em] uppercase text-foreground drop-shadow-sm">
+              YINHNG
+            </span>
           </div>
 
           {/* Header */}
