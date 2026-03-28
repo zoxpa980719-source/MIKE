@@ -10,9 +10,6 @@ import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import Image from "next/image";
-
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +18,6 @@ import { AnimatedCharacters } from "@/components/ui/animated-characters";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { toPublicProfile } from "@/lib/public-profile";
 import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { getAdminEmails } from "../login/actions";
 
 const signupSchema = z.object({
@@ -30,7 +26,6 @@ const signupSchema = z.object({
   password: z
     .string()
     .min(6, { message: "Password must be at least 6 characters." }),
-  role: z.enum(["employee", "employer"]).default("employee"),
 });
 
 type SignupFormValues = z.infer<typeof signupSchema>;
@@ -49,7 +44,6 @@ export default function SignupPage() {
       fullName: "",
       email: "",
       password: "",
-      role: "employee",
     },
   });
 
@@ -72,7 +66,7 @@ export default function SignupPage() {
 
       const adminEmails = await getAdminEmails();
       const isAdmin = values.email ? adminEmails.includes(values.email.toLowerCase()) : false;
-      const role = isAdmin ? "admin" : values.role;
+      const role = isAdmin ? "admin" : "employee";
 
       const nameParts = values.fullName.split(" ");
       const firstName = nameParts[0] || "";
@@ -85,7 +79,6 @@ export default function SignupPage() {
         role: role,
         firstName: firstName,
         lastName: lastName,
-        ...(role === "employer" && { companyName: values.fullName }),
       };
 
       await setDoc(doc(db, "users", user.uid), userData);
@@ -108,8 +101,6 @@ export default function SignupPage() {
 
       if (role === "admin") {
         router.push("/admin");
-      } else if (role === "employer") {
-        router.push("/employer/dashboard");
       } else {
         router.push("/dashboard");
       }
@@ -134,14 +125,9 @@ export default function SignupPage() {
             href="/"
             className="flex items-center gap-2 text-lg font-semibold"
           >
-            <Image
-              src="https://i.postimg.cc/nLrDYrHW/icon.png"
-              alt="CareerCompass logo"
-              width={32}
-              height={32}
-              className="bg-white/10 backdrop-blur-sm p-1 rounded-lg"
-            />
-            <span>CareerCompass</span>
+            <span className="text-2xl font-extrabold tracking-[0.25em] uppercase text-foreground drop-shadow-sm">
+              YINHNG
+            </span>
           </Link>
         </div>
 
@@ -179,14 +165,9 @@ export default function SignupPage() {
         <div className="w-full max-w-[420px]">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center gap-2 text-lg font-semibold mb-12">
-            <Image
-              src="https://i.postimg.cc/nLrDYrHW/icon.png"
-              alt="CareerCompass logo"
-              width={32}
-              height={32}
-              className="dark:bg-white dark:p-1 dark:rounded-md"
-            />
-            <span>CareerCompass</span>
+            <span className="text-2xl font-extrabold tracking-[0.25em] uppercase text-foreground drop-shadow-sm">
+              YINHNG
+            </span>
           </div>
 
           {/* Header */}
@@ -195,30 +176,12 @@ export default function SignupPage() {
               Create an account
             </h1>
             <p className="text-muted-foreground text-sm">
-              Join CareerCompass to find your next opportunity
+              Join Yinhng to find your next opportunity
             </p>
           </div>
 
           {/* Signup Form */}
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <div className="space-y-3">
-              <Label className="text-sm font-medium">I am a...</Label>
-              <RadioGroup
-                defaultValue={form.getValues("role")}
-                onValueChange={(val) => form.setValue("role", val as "employee" | "employer")}
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2 border rounded-xl px-4 py-3 flex-1 cursor-pointer hover:bg-muted/50 transition-colors [&:has([data-state=checked])]:border-primary [&:has([data-state=checked])]:bg-primary/5">
-                  <RadioGroupItem value="employee" id="employee" className="sr-only" />
-                  <Label htmlFor="employee" className="cursor-pointer flex-1 font-medium">Job Seeker</Label>
-                </div>
-                <div className="flex items-center space-x-2 border rounded-xl px-4 py-3 flex-1 cursor-pointer hover:bg-muted/50 transition-colors [&:has([data-state=checked])]:border-primary [&:has([data-state=checked])]:bg-primary/5">
-                  <RadioGroupItem value="employer" id="employer" className="sr-only" />
-                  <Label htmlFor="employer" className="cursor-pointer flex-1 font-medium">Employer</Label>
-                </div>
-              </RadioGroup>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="fullName" className="text-sm font-medium">
                 Full Name or Company Name

@@ -112,8 +112,7 @@ export async function sendWelcomeEmailDirect(
     </div>
   `;
 
-  const result = await sendEmailDirect({ to, subject, body });
-  return result.success;
+ return true;
 }
 
 export async function sendApplicationStatusEmailDirect(

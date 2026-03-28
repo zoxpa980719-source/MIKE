@@ -9,6 +9,7 @@ interface Links {
   label: string;
   href: string;
   icon: React.JSX.Element | React.ReactNode;
+  disabled?: boolean;
 }
 
 interface SidebarContextProps {
@@ -163,6 +164,31 @@ export const SidebarLink = ({
   props?: LinkProps;
 }) => {
   const { open, animate } = useSidebar();
+
+  if (link.disabled) {
+    return (
+      <div
+        className={cn(
+          "flex items-center justify-start gap-2 py-2 opacity-45 cursor-not-allowed select-none",
+          className
+        )}
+        aria-disabled="true"
+        title="This page is temporarily unavailable"
+      >
+        {link.icon}
+        <motion.span
+          animate={{
+            display: animate ? (open ? "inline-block" : "none") : "inline-block",
+            opacity: animate ? (open ? 1 : 0) : 1,
+          }}
+          className="text-neutral-700 dark:text-neutral-200 text-sm whitespace-pre inline-block !p-0 !m-0"
+        >
+          {link.label}
+        </motion.span>
+      </div>
+    );
+  }
+
   return (
     <Link
       href={link.href}

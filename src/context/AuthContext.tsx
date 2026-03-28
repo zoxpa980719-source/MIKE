@@ -35,7 +35,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Firebase Hosting only forwards cookies named "__session"
         try {
           const token = await user.getIdToken();
-          document.cookie = `__session=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax; Secure`;
+          const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+          const secureAttr = isHttps ? "; Secure" : "";
+          document.cookie = `__session=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${secureAttr}`;
         } catch (e) {
           console.error("Failed to set session cookie:", e);
         }

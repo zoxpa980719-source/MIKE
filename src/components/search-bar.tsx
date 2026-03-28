@@ -305,7 +305,7 @@ export function SearchBar() {
     <div className="w-full max-w-md border rounded-full">
       <ActionSearchBar
         actions={defaultSuggestions}
-        placeholder="Search jobs, skills, companies, locations..."
+        placeholder="YINHNG"
         value={searchTerm}
         onChange={setSearchTerm}
         onActionSelect={handleActionSelect}

@@ -4,6 +4,7 @@ import '@/styles/responsive-touch.css';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/components/theme-provider';
+import { LanguageProvider } from '@/context/LanguageContext';
 
 export const metadata: Metadata = {
   title: 'CareerCompass',
@@ -43,10 +44,12 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
         >
-            <AuthProvider>
-              {children}
-              <Toaster />
-            </AuthProvider>
+            <LanguageProvider>
+              <AuthProvider>
+                {children}
+                <Toaster />
+              </AuthProvider>
+            </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

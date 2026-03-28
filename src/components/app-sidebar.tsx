@@ -10,7 +10,6 @@ import {
 import {
   Briefcase,
   Building2,
-  Heart,
   LayoutDashboard,
   User,
   FileText,
@@ -19,8 +18,6 @@ import {
   Rocket,
   Kanban,
   MessageSquare,
-  Bell,
-  BarChart3,
   Shield,
 } from "lucide-react";
 import Link from "next/link";
@@ -31,7 +28,6 @@ import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConditionalSearchBar } from "@/components/conditional-search-bar";
-import { HeaderQuickActions } from "@/components/header-quick-actions";
 import { NotificationsDropdown } from "@/components/notifications-dropdown";
 import { UserNav } from "@/components/user-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -47,41 +43,39 @@ const employeeLinks = [
   {
     label: "Opportunities",
     href: "/opportunities",
+    disabled: true,
     icon: (
       <Briefcase className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
     ),
   },
   {
-    label: "Employers",
-    href: "/employers",
-    icon: (
-      <Building2 className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
     label: "Applications",
     href: "/applications",
+    disabled: true,
     icon: (
       <Kanban className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
     ),
   },
   {
+    label: "Plans",
+    href: "/pricing",
+    disabled: true,
+    icon: (
+      <Crown className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+    ),
+  },
+  {
     label: "LaunchPad",
     href: "/ai-tools",
+    disabled: true,
     icon: (
       <Rocket className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
     ),
   },
   {
-    label: "Saved",
-    href: "/saved",
-    icon: (
-      <Heart className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
     label: "Profile",
     href: "/profile",
+    disabled: true,
     icon: (
       <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
     ),
@@ -91,13 +85,6 @@ const employeeLinks = [
     href: "/inbox",
     icon: (
       <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Insights",
-    href: "/insights",
-    icon: (
-      <BarChart3 className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
     ),
   },
 ];
@@ -152,7 +139,7 @@ const adminLinks = [
 
 export function AppSidebar({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  const { role, user, loading } = useAuth();
+  const { role, loading } = useAuth();
   const pathname = usePathname();
 
   const links = role === "admin" ? adminLinks : role === "employer" ? employerLinks : employeeLinks;
@@ -227,7 +214,7 @@ export const Logo = ({ href }: { href: string }) => {
     >
       <Image
         src="https://i.postimg.cc/nLrDYrHW/icon.png"
-        alt="CareerCompass logo"
+        alt="YINHNG logo"
         width={24}
         height={24}
         className="dark:bg-white dark:p-0.5 dark:rounded-3xl flex-shrink-0"
@@ -235,9 +222,9 @@ export const Logo = ({ href }: { href: string }) => {
       <motion.span
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="font-medium text-black dark:text-white whitespace-pre"
+        className="text-xl font-extrabold tracking-[0.2em] uppercase text-black dark:text-white whitespace-pre"
       >
-        CareerCompass
+        YINHNG
       </motion.span>
     </Link>
   );
@@ -251,7 +238,7 @@ export const LogoIcon = ({ href }: { href: string }) => {
     >
       <Image
         src="https://i.postimg.cc/nLrDYrHW/icon.png"
-        alt="CareerCompass logo"
+        alt="YINHNG logo"
         width={24}
         height={24}
         className="dark:bg-white dark:p-0.5 dark:rounded-3xl flex-shrink-0"
