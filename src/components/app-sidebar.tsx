@@ -19,128 +19,176 @@ import {
   Kanban,
   MessageSquare,
   Shield,
+  Receipt,
 } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { usePathname } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConditionalSearchBar } from "@/components/conditional-search-bar";
 import { NotificationsDropdown } from "@/components/notifications-dropdown";
 import { UserNav } from "@/components/user-nav";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
 
-const employeeLinks = [
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: (
-      <LayoutDashboard className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
+const copy = {
+  zh: {
+    dashboard: "仪表盘",
+    opportunities: "机会",
+    applications: "申请",
+    plans: "套餐",
+    orders: "订单",
+    launchPad: "工具箱",
+    profile: "个人资料",
+    inbox: "消息",
+    postings: "职位发布",
+    analytics: "分析",
+    adminDashboard: "管理后台",
   },
-  {
-    label: "Opportunities",
-    href: "/opportunities",
-    disabled: true,
-    icon: (
-      <Briefcase className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
+  en: {
+    dashboard: "Dashboard",
+    opportunities: "Opportunities",
+    applications: "Applications",
+    plans: "Plans",
+    orders: "Orders",
+    launchPad: "LaunchPad",
+    profile: "Profile",
+    inbox: "Inbox",
+    postings: "Postings",
+    analytics: "Analytics",
+    adminDashboard: "Admin Dashboard",
   },
-  {
-    label: "Applications",
-    href: "/applications",
-    disabled: true,
-    icon: (
-      <Kanban className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Plans",
-    href: "/pricing",
-    disabled: true,
-    icon: (
-      <Crown className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "LaunchPad",
-    href: "/ai-tools",
-    disabled: true,
-    icon: (
-      <Rocket className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Profile",
-    href: "/profile",
-    disabled: true,
-    icon: (
-      <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Inbox",
-    href: "/inbox",
-    icon: (
-      <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-];
-
-const employerLinks = [
-  {
-    label: "Dashboard",
-    href: "/employer/dashboard",
-    icon: (
-      <Building2 className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Postings",
-    href: "/employer/postings",
-    icon: (
-      <FileText className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Analytics",
-    href: "/employer/analytics",
-    icon: (
-      <BarChartHorizontal className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Profile",
-    href: "/employer/profile",
-    icon: (
-      <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-  {
-    label: "Inbox",
-    href: "/inbox",
-    icon: (
-      <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-];
-
-const adminLinks = [
-  {
-    label: "Admin Dashboard",
-    href: "/admin",
-    icon: (
-      <Shield className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-    ),
-  },
-];
+} as const;
 
 export function AppSidebar({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { role, loading } = useAuth();
+  const { locale } = useLanguage();
   const pathname = usePathname();
+  const t = copy[locale];
+
+  const employeeLinks = [
+    {
+      label: t.dashboard,
+      href: "/dashboard",
+      icon: (
+        <LayoutDashboard className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.opportunities,
+      href: "/opportunities",
+      disabled: true,
+      icon: (
+        <Briefcase className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.applications,
+      href: "/applications",
+      disabled: true,
+      icon: (
+        <Kanban className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.plans,
+      href: "/pricing",
+      disabled: true,
+      icon: (
+        <Crown className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.orders,
+      href: "/orders",
+      icon: (
+        <Receipt className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.launchPad,
+      href: "/ai-tools",
+      disabled: true,
+      icon: (
+        <Rocket className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.profile,
+      href: "/profile",
+      disabled: true,
+      icon: (
+        <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.inbox,
+      href: "/inbox",
+      icon: (
+        <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+  ];
+
+  const employerLinks = [
+    {
+      label: t.dashboard,
+      href: "/employer/dashboard",
+      icon: (
+        <Building2 className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.postings,
+      href: "/employer/postings",
+      icon: (
+        <FileText className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.analytics,
+      href: "/employer/analytics",
+      icon: (
+        <BarChartHorizontal className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.profile,
+      href: "/employer/profile",
+      icon: (
+        <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.orders,
+      href: "/orders",
+      icon: (
+        <Receipt className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+    {
+      label: t.inbox,
+      href: "/inbox",
+      icon: (
+        <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+  ];
+
+  const adminLinks = [
+    {
+      label: t.adminDashboard,
+      href: "/admin",
+      icon: (
+        <Shield className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
+      ),
+    },
+  ];
 
   const links = role === "admin" ? adminLinks : role === "employer" ? employerLinks : employeeLinks;
   const dashboardHref = role === "admin" ? "/admin" : role === "employer" ? "/employer/dashboard" : "/dashboard";
@@ -194,6 +242,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex-1 flex items-center justify-end gap-4">
             <NotificationsDropdown />
+            <LanguageToggle />
             <ThemeToggle />
             <UserNav />
           </div>

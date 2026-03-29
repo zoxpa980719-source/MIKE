@@ -193,6 +193,8 @@ export default function HomePage() {
   const [purchaseEmail, setPurchaseEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [heroOffset, setHeroOffset] = useState({ x: 50, y: 50 });
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [activePlanCard, setActivePlanCard] = useState<PlanId>("plan466");
 
   useEffect(() => {
     if (loading || !user) return;
@@ -202,6 +204,13 @@ export default function HomePage() {
       router.replace("/dashboard");
     }
   }, [loading, user, role, router]);
+
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 24);
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const navLinks = useMemo(() => t.nav, [t.nav]);
 
@@ -244,14 +253,20 @@ export default function HomePage() {
 
   return (
     <div className="h-screen overflow-y-auto bg-[#f4f6f8] text-slate-900 dark:bg-slate-950 dark:text-slate-100 scroll-smooth">
-      <header className="fixed top-0 z-40 w-full border-b border-white/20 bg-transparent">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <a href="#hero" className="text-2xl font-extrabold tracking-[0.25em] text-white">
+      <header
+        className={`fixed top-0 z-40 w-full border-b transition-all duration-300 ${
+          isScrolled
+            ? "border-white/20 bg-slate-950/74 shadow-[0_14px_40px_rgba(2,6,23,0.62)] backdrop-blur-2xl"
+            : "border-white/15 bg-slate-950/56 shadow-[0_10px_35px_rgba(2,6,23,0.46)] backdrop-blur-xl"
+        }`}
+      >
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+          <a href="#hero" className="text-2xl font-extrabold tracking-[0.25em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]">
             YINHNG
           </a>
 
           <button
-            className="md:hidden rounded-md border border-white/30 px-3 py-1 text-white"
+            className="md:hidden rounded-md border border-white/40 bg-black/25 px-3 py-1 text-white backdrop-blur-md"
             onClick={() => setMenuOpen((v) => !v)}
             type="button"
           >
@@ -259,12 +274,12 @@ export default function HomePage() {
           </button>
 
           <nav
-            className={`${menuOpen ? "block" : "hidden"} absolute left-0 top-full w-full bg-slate-900/95 p-4 md:static md:block md:w-auto md:bg-transparent md:p-0`}
+            className={`${menuOpen ? "block" : "hidden"} absolute left-2 right-2 top-[calc(100%+0.5rem)] rounded-2xl border border-white/15 bg-slate-950/90 p-4 shadow-2xl backdrop-blur-xl md:static md:left-auto md:right-auto md:top-auto md:block md:w-auto md:rounded-full md:border-white/20 md:px-5 md:py-2 md:shadow-none ${isScrolled ? "md:bg-black/62 md:backdrop-blur-2xl" : "md:bg-black/45 md:backdrop-blur-xl"}`}
           >
-            <ul className="flex flex-col gap-4 md:flex-row md:items-center md:gap-6">
+            <ul className="flex flex-col gap-4 md:flex-row md:items-center md:gap-7">
               {navLinks.map((item) => (
                 <li key={item.id}>
-                  <a href={`#${item.id}`} className="text-sm text-white/90 hover:text-emerald-300">
+                  <a href={`#${item.id}`} className="text-sm font-medium text-white/95 transition hover:text-emerald-300">
                     {item.label}
                   </a>
                 </li>
@@ -277,13 +292,13 @@ export default function HomePage() {
             <ThemeToggle />
             <Link
               href="/login"
-              className="rounded-full border border-white/35 px-4 py-2 text-sm text-white hover:bg-white/10"
+              className="rounded-full border border-white/45 bg-black/25 px-4 py-2 text-sm font-medium text-white backdrop-blur-md hover:bg-white/15"
             >
               {t.login}
             </Link>
             <a
               href="#pricing"
-              className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600"
+              className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(16,185,129,0.38)] hover:bg-emerald-600"
             >
               {t.buyNow}
             </a>
@@ -298,18 +313,21 @@ export default function HomePage() {
           style={{
             backgroundImage: "url('/assets/img/hero-bg.jpg')",
             backgroundPosition: `${heroOffset.x}% ${heroOffset.y}%`,
+            backgroundColor: "rgba(2, 6, 23, 0.44)",
+            backgroundBlendMode: "multiply",
           }}
           onMouseMove={handleHeroMouseMove}
           onMouseLeave={() => setHeroOffset({ x: 50, y: 50 })}
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/62 via-slate-900/40 to-slate-950/72" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_45%,rgba(20,184,166,0.2),transparent_42%),radial-gradient(circle_at_75%_20%,rgba(16,185,129,0.15),transparent_35%)]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/84 via-slate-900/62 to-slate-950/86" />
+          <div className="absolute inset-0 bg-black/20" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_45%,rgba(20,184,166,0.05),transparent_42%),radial-gradient(circle_at_75%_20%,rgba(16,185,129,0.04),transparent_35%)]" />
           <div className="relative z-10 mx-auto flex max-w-7xl flex-col px-4 py-28 text-white md:py-36">
-            <p className="text-sm uppercase tracking-[0.3em] text-emerald-300">YINHNG LLC</p>
+            <p className="text-sm uppercase tracking-[0.3em] text-emerald-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">YINHNG LLC</p>
             <h1 className="mt-4 max-w-3xl text-4xl font-extrabold leading-tight md:text-6xl">
               {t.heroTitle}
             </h1>
-            <p className="mt-6 max-w-2xl text-base text-white/85 md:text-lg">{t.heroDesc}</p>
+            <p className="mt-6 max-w-2xl text-base text-white/90 drop-shadow-[0_2px_10px_rgba(0,0,0,0.65)] md:text-lg">{t.heroDesc}</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a href="#pricing" className="rounded-full bg-emerald-500 px-6 py-3 font-semibold hover:bg-emerald-600">
                 {t.viewPlans}
@@ -370,9 +388,16 @@ export default function HomePage() {
             {t.plans.map((plan) => (
               <article
                 key={plan.id}
-                className={`rounded-3xl border bg-white p-6 dark:border-slate-800 dark:bg-slate-900 ${plan.recommended ? "border-emerald-400 shadow-md" : ""}`}
+                className={`group rounded-3xl border bg-white p-6 transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
+                  activePlanCard === plan.id
+                    ? "border-emerald-400 shadow-[0_14px_28px_rgba(16,185,129,0.20)] ring-1 ring-emerald-300/70"
+                    : "border-slate-200 hover:-translate-y-1 hover:border-emerald-300 hover:shadow-lg"
+                }`}
+                onMouseEnter={() => setActivePlanCard(plan.id)}
+                onFocus={() => setActivePlanCard(plan.id)}
+                tabIndex={0}
               >
-                {plan.recommended ? (
+                {plan.recommended || activePlanCard === plan.id ? (
                   <span className="mb-4 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                     {t.popular}
                   </span>
@@ -387,8 +412,9 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={() => handleBuy(plan.id)}
+                  onMouseEnter={() => setActivePlanCard(plan.id)}
                   className={`mt-6 w-full rounded-full px-4 py-3 text-sm font-semibold transition ${
-                    plan.recommended
+                    activePlanCard === plan.id
                       ? "bg-emerald-600 text-white hover:bg-emerald-700"
                       : "border border-emerald-600 text-emerald-700 hover:bg-emerald-50"
                   }`}

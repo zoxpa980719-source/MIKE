@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -15,7 +15,7 @@ export default function CheckoutSuccessPage() {
   const sessionId = searchParams.get("session_id");
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [planUpdated, setPlanUpdated] = useState(false);
+  const [, setPlanUpdated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [planInfo, setPlanInfo] = useState<{ name: string; id: string } | null>(null);
 
@@ -27,7 +27,6 @@ export default function CheckoutSuccessPage() {
       }
 
       try {
-        // Verify the session with our API
         const response = await fetch(`/api/checkout/verify?session_id=${sessionId}`);
         const data = await response.json();
 
@@ -38,14 +37,11 @@ export default function CheckoutSuccessPage() {
         if (data.planId && data.userId === user.uid) {
           setPlanInfo({ name: data.planName || data.planId, id: data.planId });
           setPlanUpdated(true);
-          
-          // Trigger fireworks confetti animation
           triggerFireworks(5000);
         }
       } catch (err: any) {
         console.error("Plan update error:", err);
         setError(err.message);
-        // Still show success UI even if plan update fails - webhook will handle it
         triggerFireworks(3000);
       } finally {
         setLoading(false);
@@ -85,19 +81,19 @@ export default function CheckoutSuccessPage() {
         <CardContent className="space-y-6">
           {error ? (
             <p className="text-muted-foreground">
-              Your payment was processed, but we couldn&apos;t update your plan automatically. 
+              Your payment was processed, but we couldn&apos;t update your plan automatically.
               It should be updated within a few minutes. If not, please contact support.
             </p>
           ) : (
             <>
               <p className="text-muted-foreground">
-                🎉 Welcome to CareerCompass {planInfo?.name || "Premium"}! Your subscription is now active.
+                Welcome to YINHNG {planInfo?.name || "Service"}! Your order is confirmed.
               </p>
-              
+
               <div className="p-4 rounded-lg bg-muted/50 text-left space-y-2">
-                <p className="text-sm">✅ Unlimited applications</p>
-                <p className="text-sm">✅ Profile boost activated</p>
-                <p className="text-sm">✅ Premium features unlocked</p>
+                <p className="text-sm">Order confirmation email sent</p>
+                <p className="text-sm">Service onboarding in progress</p>
+                <p className="text-sm">Invoice and receipt links included</p>
               </div>
             </>
           )}
@@ -107,7 +103,7 @@ export default function CheckoutSuccessPage() {
               <Link href="/dashboard">Go to Dashboard</Link>
             </Button>
             <Button variant="outline" asChild>
-              <Link href="/opportunities">Browse Opportunities</Link>
+              <Link href="/orders">View Orders</Link>
             </Button>
           </div>
 

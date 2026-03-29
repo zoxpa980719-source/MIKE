@@ -1,68 +1,255 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe, PLAN_DETAILS } from "@/lib/stripe";
 import { requireAuth } from "@/lib/api-auth";
+import { adminDb } from "@/lib/firebase-admin";
+import {
+  buildOrderNumber,
+  getPackageItems,
+  getPackageNameByPlanId,
+  sendOrderConfirmationEmail,
+  sendOrderReceiptEmail,
+} from "@/lib/order-confirmation-email";
+
+const SERVICE_PLAN_CATALOG: Record<string, { name: string; amountUsd: number }> = {
+  plan299: { name: "Personal Agency Service", amountUsd: 29900 },
+  plan466: { name: "Full Agency Service", amountUsd: 46600 },
+  plan1599: { name: "Website Agency Service", amountUsd: 159900 },
+  "personal-agent": { name: "Personal Agency Service", amountUsd: 29900 },
+  "full-agent": { name: "Full Agency Service", amountUsd: 46600 },
+  "website-agent": { name: "Website Agency Service", amountUsd: 159900 },
+};
+
+function parseClientReferenceId(clientReferenceId?: string | null) {
+  if (!clientReferenceId) return { userId: null as string | null, planHint: null as string | null };
+  const [userId, planHint] = clientReferenceId.split("::");
+  if (planHint) return { userId: userId || null, planHint: planHint || null };
+  return { userId: clientReferenceId, planHint: null as string | null };
+}
+
+function inferPlanByAmount(amountTotal?: number | null, currency?: string | null) {
+  if (typeof amountTotal !== "number") return { planId: null as string | null, planName: null as string | null };
+  if ((currency || "usd").toLowerCase() !== "usd") return { planId: null as string | null, planName: null as string | null };
+  const found = Object.entries(SERVICE_PLAN_CATALOG).find(([, v]) => v.amountUsd === amountTotal);
+  if (!found) return { planId: null as string | null, planName: null as string | null };
+  return { planId: found[0], planName: found[1].name };
+}
+
+async function getStripeBillingLinks(session: any) {
+  let stripeReceiptUrl: string | null = null;
+  let stripeInvoiceUrl: string | null = null;
+  let stripeInvoicePdfUrl: string | null = null;
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null;
+  if (paymentIntentId) {
+    try {
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+        expand: ["latest_charge"],
+      });
+      const latestCharge = paymentIntent.latest_charge;
+      if (latestCharge && typeof latestCharge !== "string") {
+        stripeReceiptUrl = latestCharge.receipt_url ?? null;
+      }
+    } catch (error) {
+      console.warn(`[checkout-verify] Failed to resolve receipt URL for session ${session.id}`, error);
+    }
+  }
+
+  const invoiceId = typeof session.invoice === "string" ? session.invoice : session.invoice?.id ?? null;
+  if (invoiceId) {
+    try {
+      const invoice = await stripe.invoices.retrieve(invoiceId);
+      stripeInvoiceUrl = invoice.hosted_invoice_url ?? null;
+      stripeInvoicePdfUrl = invoice.invoice_pdf ?? null;
+    } catch (error) {
+      console.warn(`[checkout-verify] Failed to resolve invoice URLs for session ${session.id}`, error);
+    }
+  }
+
+  return { stripeReceiptUrl, stripeInvoiceUrl, stripeInvoicePdfUrl };
+}
 
 export async function GET(request: NextRequest) {
   try {
     const { response: authError, user } = await requireAuth(request);
     if (authError) return authError;
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("session_id");
-
     if (!sessionId) {
-      return NextResponse.json(
-        { error: "Missing session_id parameter" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing session_id parameter" }, { status: 400 });
     }
 
-    // Retrieve the checkout session from Stripe
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-    if (!session) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404 }
-      );
-    }
-
-    // Check if payment was successful
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ["line_items.data.price.product"],
+    });
+    if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     if (session.payment_status !== "paid") {
-      return NextResponse.json(
-        { error: "Payment not completed" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Payment not completed" }, { status: 400 });
     }
 
-    // Get plan info from metadata
-    const planId = session.metadata?.planId;
-    const userId = session.metadata?.userId;
-    const frequency = session.metadata?.frequency;
-
-    if (!userId || userId !== user.uid) {
-      return NextResponse.json(
-        { error: "Forbidden" },
-        { status: 403 }
-      );
+    const clientRef = parseClientReferenceId(session.client_reference_id);
+    const sessionUserId = session.metadata?.userId ?? clientRef.userId ?? null;
+    if (!sessionUserId || sessionUserId !== user.uid) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Get plan name from our config
-    const planName = planId ? PLAN_DETAILS[planId]?.name : null;
+    const firstLineItem = session.line_items?.data?.[0];
+    const interval = firstLineItem?.price?.recurring?.interval;
+    const product = firstLineItem?.price?.product;
+    const productName =
+      typeof product === "string"
+        ? null
+        : product && "name" in product
+          ? (product.name as string)
+          : null;
+
+    let planId = session.metadata?.planId ?? clientRef.planHint ?? null;
+    let planName =
+      getPackageNameByPlanId(planId) ??
+      (planId ? PLAN_DETAILS[planId]?.name ?? planId : null) ??
+      productName;
+    let frequency =
+      session.metadata?.frequency ??
+      (interval === "year" ? "yearly" : interval === "month" ? "monthly" : interval ?? null);
+
+    if (!planId || !planName) {
+      const inferred = inferPlanByAmount(session.amount_total, session.currency);
+      if (!planId && inferred.planId) planId = inferred.planId;
+      if (!planName && inferred.planName) planName = inferred.planName;
+    }
+
+    const createdAtMs = (session.created ?? Math.floor(Date.now() / 1000)) * 1000;
+    const billingLinks = await getStripeBillingLinks(session);
+    const subscriptionId =
+      typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
+    const customerId =
+      typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
+    const orderNumber = buildOrderNumber(session.id, createdAtMs);
+
+    if (adminDb) {
+      await adminDb.collection("orders").doc(session.id).set(
+        {
+          orderId: session.id,
+          orderNumber,
+          userId: user.uid,
+          userEmail: session.customer_details?.email ?? session.customer_email ?? user.email ?? null,
+          planId: planId ?? null,
+          planName: planName ?? planId ?? null,
+          frequency: frequency ?? null,
+          amountTotal: session.amount_total ?? null,
+          currency: session.currency ?? null,
+          paymentStatus: session.payment_status ?? null,
+          status: session.payment_status === "paid" ? "paid" : session.status ?? "pending",
+          stripeSessionId: session.id,
+          stripeSubscriptionId: subscriptionId,
+          stripeCustomerId: customerId,
+          createdAt: new Date(createdAtMs).toISOString(),
+          createdAtMs,
+          stripeReceiptUrl: billingLinks.stripeReceiptUrl,
+          stripeInvoiceUrl: billingLinks.stripeInvoiceUrl,
+          stripeInvoicePdfUrl: billingLinks.stripeInvoicePdfUrl,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      const orderRef = adminDb.collection("orders").doc(session.id);
+      const orderSnap = await orderRef.get();
+      const orderData = orderSnap.data() as Record<string, any> | undefined;
+      const toEmail =
+        (session.customer_details?.email as string | undefined) ??
+        (session.customer_email as string | undefined) ??
+        user.email;
+
+      if (toEmail) {
+        const customerName =
+          (session.customer_details?.name as string | undefined) ||
+          (orderData?.customerName as string | undefined) ||
+          toEmail.split("@")[0] ||
+          "Customer";
+
+        const stripeReceiptUrl = billingLinks.stripeReceiptUrl ?? null;
+        const stripeInvoiceUrl = billingLinks.stripeInvoiceUrl ?? null;
+        const stripeInvoicePdfUrl = billingLinks.stripeInvoicePdfUrl ?? null;
+
+        if (!orderData?.confirmationEmailSentAt) {
+          const sendResult = await sendOrderConfirmationEmail({
+            toEmail,
+            customerName,
+            orderNumber,
+            orderDate: new Date(createdAtMs),
+            planName: planName || "Service Package",
+            includedItems: getPackageItems(planId),
+            amountTotal: session.amount_total,
+            currency: session.currency,
+            stripeReceiptUrl,
+            stripeInvoiceUrl,
+            stripeInvoicePdfUrl,
+          });
+
+          if (sendResult.success) {
+            await orderRef.set(
+              {
+                customerName,
+                confirmationEmailSentAt: new Date().toISOString(),
+                confirmationEmailMessageId: sendResult.messageId ?? null,
+                stripeReceiptUrl: stripeReceiptUrl ?? null,
+                stripeInvoiceUrl: stripeInvoiceUrl ?? null,
+                stripeInvoicePdfUrl: stripeInvoicePdfUrl ?? null,
+                updatedAt: new Date().toISOString(),
+              },
+              { merge: true }
+            );
+          }
+        }
+
+        if (!orderData?.receiptEmailSentAt && (stripeReceiptUrl || stripeInvoiceUrl || stripeInvoicePdfUrl)) {
+          const receiptSendResult = await sendOrderReceiptEmail({
+            toEmail,
+            customerName,
+            orderNumber,
+            orderDate: new Date(createdAtMs),
+            planName: planName || "Service Package",
+            amountTotal: session.amount_total,
+            currency: session.currency,
+            stripeReceiptUrl,
+            stripeInvoiceUrl,
+            stripeInvoicePdfUrl,
+          });
+
+          if (receiptSendResult.success) {
+            await orderRef.set(
+              {
+                customerName,
+                receiptEmailSentAt: new Date().toISOString(),
+                receiptEmailMessageId: receiptSendResult.messageId ?? null,
+                stripeReceiptUrl: stripeReceiptUrl ?? null,
+                stripeInvoiceUrl: stripeInvoiceUrl ?? null,
+                stripeInvoicePdfUrl: stripeInvoicePdfUrl ?? null,
+                updatedAt: new Date().toISOString(),
+              },
+              { merge: true }
+            );
+          }
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
       planId,
       planName,
-      userId,
+      userId: sessionUserId,
       frequency,
-      subscriptionId: session.subscription,
-      customerId: session.customer,
+      subscriptionId,
+      customerId,
       amountTotal: session.amount_total,
       currency: session.currency,
+      orderNumber,
     });
   } catch (error: any) {
     console.error("Session verification error:", error);
