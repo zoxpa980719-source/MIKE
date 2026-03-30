@@ -28,6 +28,16 @@ import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button
 import { toPublicProfile } from "@/lib/public-profile";
 import { getAdminEmails } from "./actions";
 
+const PRIMARY_ADMIN_EMAIL = "mike@yinhng.com";
+
+function normalizeEmail(email?: string | null) {
+  return (email || "").trim().toLowerCase();
+}
+
+function isPrimaryAdminEmail(email?: string | null) {
+  return normalizeEmail(email) === PRIMARY_ADMIN_EMAIL;
+}
+
 const loginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address." }),
   password: z
@@ -69,10 +79,10 @@ export default function LoginPage() {
 
       const userDocRef = doc(db, "users", user.uid);
       const userDocSnap = await getDoc(userDocRef);
+      let userData = userDocSnap.exists() ? userDocSnap.data() : null;
 
       // Handle first login automation
       if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
         await setDoc(
           doc(db, "publicProfiles", user.uid),
           toPublicProfile({ uid: user.uid, ...userData }),
@@ -81,19 +91,18 @@ export default function LoginPage() {
         await handleFirstLogin(
           user.uid,
           user.email!,
-          userData.displayName || user.email!,
+          userData?.displayName || user.email!,
         );
       }
 
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
-        if (userData.role === "admin") {
-          router.push("/admin");
-        } else if (userData.role === "employer") {
-          router.push("/employer/dashboard");
-        } else {
-          router.push("/dashboard");
-        }
+      if (isPrimaryAdminEmail(user.email) && userData?.role !== "admin") {
+        userData = { ...(userData || {}), role: "admin" };
+      }
+
+      if (userData?.role === "admin") {
+        router.push("/admin");
+      } else if (userData?.role === "employer") {
+        router.push("/employer/dashboard");
       } else {
         router.push("/dashboard");
       }
@@ -121,7 +130,8 @@ export default function LoginPage() {
       if (!userDocSnap.exists()) {
         // New user logic
         const adminEmails = await getAdminEmails();
-        const isAdmin = user.email ? adminEmails.includes(user.email.toLowerCase()) : false;
+        const normalizedEmail = normalizeEmail(user.email);
+        const isAdmin = isPrimaryAdminEmail(user.email) || adminEmails.includes(normalizedEmail);
 
         const emailDomain = user.email?.split("@")[1];
         const role = isAdmin ? "admin" : (emailDomain === "gmail.com" ? "employee" : "employer");
@@ -170,12 +180,16 @@ export default function LoginPage() {
         }
       } else {
         // Existing user logic
+        const userData = userDocSnap.data();
+        if (isPrimaryAdminEmail(user.email) && userData.role !== "admin") {
+          userData.role = "admin";
+        }
+
         await setDoc(
           doc(db, "publicProfiles", user.uid),
-          toPublicProfile({ uid: user.uid, ...userDocSnap.data() }),
+          toPublicProfile({ uid: user.uid, ...userData }),
           { merge: true },
         );
-        const userData = userDocSnap.data();
         if (userData.role === "admin") {
           router.push("/admin");
         } else if (userData.role === "employer") {

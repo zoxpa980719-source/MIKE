@@ -6,6 +6,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 
+const PRIMARY_ADMIN_EMAIL = "mike@yinhng.com";
+
 export interface AuthenticatedUser {
   uid: string;
   email?: string;
@@ -93,6 +95,11 @@ export async function requireRole(
   }
 
   const allowedRoles = Array.isArray(roles) ? roles : [roles];
+  const normalizedEmail = (user.email || "").trim().toLowerCase();
+  if (normalizedEmail === PRIMARY_ADMIN_EMAIL && allowedRoles.includes("admin")) {
+    return { response: null, user, role: "admin" };
+  }
+
   const role = await getUserRole(user.uid);
 
   if (!role || !allowedRoles.includes(role)) {

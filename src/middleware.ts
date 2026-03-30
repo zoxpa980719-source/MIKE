@@ -8,13 +8,18 @@ const PUBLIC_ROUTES = [
   "/login",
   "/signup",
   "/forgot-password",
+  "/checkout/success",
   "/pricing",
   "/privacy-policy", // allow public access to privacy policy
   "/terms", // allow public access to terms of service
 ];
 
 // API routes that don't require authentication
-const PUBLIC_API_ROUTES = ["/api/webhooks"];
+const PUBLIC_API_ROUTES = [
+  "/api/webhooks",
+  "/api/checkout/public-service",
+  "/api/checkout/verify",
+];
 
 // Static file extensions to skip
 const STATIC_EXTENSIONS = [

@@ -33,9 +33,11 @@ function markEventProcessed(eventId: string): void {
 }
 
 const SERVICE_PLAN_CATALOG: Record<string, { name: string; amountUsd: number }> = {
+  plan4999: { name: "Consulting Service", amountUsd: 4999 },
   plan299: { name: "Personal Agency Service", amountUsd: 29900 },
   plan466: { name: "Full Agency Service", amountUsd: 46600 },
   plan1599: { name: "Website Agency Service", amountUsd: 159900 },
+  "consult-service": { name: "Consulting Service", amountUsd: 4999 },
   "personal-agent": { name: "Personal Agency Service", amountUsd: 29900 },
   "full-agent": { name: "Full Agency Service", amountUsd: 46600 },
   "website-agent": { name: "Website Agency Service", amountUsd: 159900 },

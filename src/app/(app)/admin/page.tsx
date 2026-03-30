@@ -1,67 +1,110 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  limit,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Users,
-  Briefcase,
-  FileText,
-  Shield,
-  TrendingUp,
-  Crown,
-  Loader2,
-  UserCheck,
-  Building2,
-} from "lucide-react";
+import { Loader2, Shield, Users, Receipt, Mail, DollarSign, CheckCircle2, MessageSquare } from "lucide-react";
 import { motion } from "framer-motion";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
 import { AdminEmailForm } from "./AdminEmailForm";
 
-const PLAN_COLORS: Record<string, string> = {
-  free: "#94a3b8",
-  starter: "#94a3b8",
-  pro: "#6366f1",
-  business: "#8b5cf6",
-  premium: "#f59e0b",
+type OrderRecord = {
+  orderId?: string;
+  orderNumber?: string;
+  userEmail?: string | null;
+  customerName?: string | null;
+  planName?: string | null;
+  planId?: string | null;
+  amountTotal?: number | null;
+  currency?: string | null;
+  paymentStatus?: string | null;
+  status?: string | null;
+  confirmationEmailSentAt?: string | null;
+  receiptEmailSentAt?: string | null;
+  createdAt?: string | null;
+  createdAtMs?: number | null;
 };
+
+const copy = {
+  zh: {
+    title: "管理员控制面板",
+    subtitle: "服务订单、客户和邮件发送总览",
+    allOrders: "查看所有客户订单",
+    customerMessages: "查看客户留言",
+    cards: {
+      users: "总用户数",
+      customers: "付费客户",
+      orders: "订单总数",
+      paid: "已支付订单",
+      revenue: "累计收入",
+      emails: "收据已发送",
+    },
+    recent: "最近订单",
+    noRecent: "暂无订单数据",
+    orderNo: "订单号",
+    customer: "客户",
+    package: "套餐",
+    amount: "金额",
+    status: "状态",
+    sent: "已发送",
+    notSent: "未发送",
+    paid: "已支付",
+    open: "未完成",
+  },
+  en: {
+    title: "Admin Dashboard",
+    subtitle: "Overview of service orders, customers, and email delivery",
+    allOrders: "View All Customer Orders",
+    customerMessages: "View Customer Messages",
+    cards: {
+      users: "Total Users",
+      customers: "Paying Customers",
+      orders: "Total Orders",
+      paid: "Paid Orders",
+      revenue: "Total Revenue",
+      emails: "Receipt Emails Sent",
+    },
+    recent: "Recent Orders",
+    noRecent: "No order data yet",
+    orderNo: "Order",
+    customer: "Customer",
+    package: "Package",
+    amount: "Amount",
+    status: "Status",
+    sent: "Sent",
+    notSent: "Not Sent",
+    paid: "Paid",
+    open: "Open",
+  },
+} as const;
+
+function formatMoney(amountTotal?: number | null, currency?: string | null) {
+  if (typeof amountTotal !== "number") return "-";
+  const value = amountTotal / 100;
+  const code = (currency || "usd").toUpperCase();
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${code}`;
+  }
+}
 
 export default function AdminDashboardPage() {
   const { user, userProfile, loading: authLoading } = useAuth();
+  const { locale } = useLanguage();
+  const t = copy[locale];
   const router = useRouter();
+
   const [loading, setLoading] = useState(true);
-  const [platformStats, setPlatformStats] = useState({
-    totalUsers: 0,
-    totalEmployers: 0,
-    totalEmployees: 0,
-    totalOpportunities: 0,
-    totalApplications: 0,
-    activeOpportunities: 0,
-  });
-  const [planDistribution, setPlanDistribution] = useState<any[]>([]);
-  const [recentUsers, setRecentUsers] = useState<any[]>([]);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -73,67 +116,56 @@ export default function AdminDashboardPage() {
       router.push("/dashboard");
       return;
     }
-    fetchPlatformData();
-  }, [user, userProfile, authLoading]);
+    void fetchData();
+  }, [user, userProfile, authLoading, router]);
 
-  const fetchPlatformData = async () => {
+  const fetchData = async () => {
     try {
-      // Fetch users
-      const usersSnap = await getDocs(collection(db, "users"));
-      const users = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const token = await user?.getIdToken();
+      const headers: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
+        : {};
 
-      const employers = users.filter((u: any) => u.role === "employer");
-      const employees = users.filter((u: any) => u.role === "employee" || !u.role);
+      const [overviewRes, ordersRes] = await Promise.all([
+        fetch("/api/admin/overview", { headers }),
+        fetch("/api/admin/orders", { headers }),
+      ]);
 
-      // Plan distribution
-      const planCounts: Record<string, number> = {};
-      users.forEach((u: any) => {
-        const plan = u.plan || "free";
-        planCounts[plan] = (planCounts[plan] || 0) + 1;
-      });
-      const planData = Object.entries(planCounts).map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        value,
-        fill: PLAN_COLORS[name] || "#94a3b8",
-      }));
+      const overview = await overviewRes.json();
+      const ordersPayload = await ordersRes.json();
 
-      // Recent users (last 10 by doc order)
-      const recentUsersData = users
-        .slice(-10)
-        .reverse()
-        .map((u: any) => ({
-          name: u.displayName || u.companyName || "Unknown",
-          email: u.email,
-          role: u.role || "employee",
-          plan: u.plan || "free",
-        }));
+      if (!overviewRes.ok) {
+        throw new Error(overview?.error || "Failed to fetch admin overview");
+      }
+      if (!ordersRes.ok) {
+        throw new Error(ordersPayload?.error || "Failed to fetch admin orders");
+      }
 
-      // Fetch opportunities
-      const oppsSnap = await getDocs(collection(db, "opportunities"));
-      const totalOpps = oppsSnap.size;
-      const activeOpps = oppsSnap.docs.filter(
-        (d) => d.data().status === "Active"
-      ).length;
-
-      // Fetch applications count
-      const appsSnap = await getDocs(collection(db, "applications"));
-
-      setPlatformStats({
-        totalUsers: users.length,
-        totalEmployers: employers.length,
-        totalEmployees: employees.length,
-        totalOpportunities: totalOpps,
-        totalApplications: appsSnap.size,
-        activeOpportunities: activeOpps,
-      });
-      setPlanDistribution(planData);
-      setRecentUsers(recentUsersData);
+      setTotalUsers(typeof overview.totalUsers === "number" ? overview.totalUsers : 0);
+      const list = Array.isArray(ordersPayload.orders)
+        ? (ordersPayload.orders as OrderRecord[])
+        : [];
+      setOrders(list.sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0)));
     } catch (err) {
-      console.error("Error fetching admin data:", err);
+      console.error("admin dashboard fetch error", err);
     } finally {
       setLoading(false);
     }
   };
+
+  const stats = useMemo(() => {
+    const paid = orders.filter((o) => (o.paymentStatus || o.status) === "paid");
+    const revenueCents = paid.reduce((sum, o) => sum + (o.amountTotal || 0), 0);
+    const payingCustomers = new Set(paid.map((o) => o.userEmail).filter(Boolean)).size;
+    const receiptSent = orders.filter((o) => Boolean(o.receiptEmailSentAt)).length;
+    return {
+      totalOrders: orders.length,
+      paidOrders: paid.length,
+      revenueCents,
+      payingCustomers,
+      receiptSent,
+    };
+  }, [orders]);
 
   if (authLoading || loading) {
     return (
@@ -144,12 +176,12 @@ export default function AdminDashboardPage() {
   }
 
   const statCards = [
-    { label: "Total Users", value: platformStats.totalUsers, icon: Users, color: "text-blue-500", bg: "bg-blue-500/10" },
-    { label: "Employers", value: platformStats.totalEmployers, icon: Building2, color: "text-violet-500", bg: "bg-violet-500/10" },
-    { label: "Job Seekers", value: platformStats.totalEmployees, icon: UserCheck, color: "text-emerald-500", bg: "bg-emerald-500/10" },
-    { label: "Job Postings", value: platformStats.totalOpportunities, icon: Briefcase, color: "text-amber-500", bg: "bg-amber-500/10" },
-    { label: "Applications", value: platformStats.totalApplications, icon: FileText, color: "text-pink-500", bg: "bg-pink-500/10" },
-    { label: "Active Jobs", value: platformStats.activeOpportunities, icon: TrendingUp, color: "text-indigo-500", bg: "bg-indigo-500/10" },
+    { label: t.cards.users, value: totalUsers, icon: Users, color: "text-blue-500", bg: "bg-blue-500/10" },
+    { label: t.cards.customers, value: stats.payingCustomers, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/10" },
+    { label: t.cards.orders, value: stats.totalOrders, icon: Receipt, color: "text-violet-500", bg: "bg-violet-500/10" },
+    { label: t.cards.paid, value: stats.paidOrders, icon: CheckCircle2, color: "text-green-500", bg: "bg-green-500/10" },
+    { label: t.cards.revenue, value: formatMoney(stats.revenueCents, "usd"), icon: DollarSign, color: "text-amber-500", bg: "bg-amber-500/10" },
+    { label: t.cards.emails, value: stats.receiptSent, icon: Mail, color: "text-pink-500", bg: "bg-pink-500/10" },
   ];
 
   return (
@@ -158,12 +190,26 @@ export default function AdminDashboardPage() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
             <Shield className="h-7 w-7 text-primary" />
-            Admin Dashboard
+            {t.title}
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">Platform-wide metrics and user management</p>
+          <p className="text-muted-foreground text-sm mt-1">{t.subtitle}</p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <Link
+              href="/admin/orders"
+              className="inline-flex rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              {t.allOrders}
+            </Link>
+            <Link
+              href="/inbox"
+              className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              <MessageSquare className="h-4 w-4" />
+              {t.customerMessages}
+            </Link>
+          </div>
         </motion.div>
 
-        {/* Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           {statCards.map((card, i) => {
             const Icon = card.icon;
@@ -183,80 +229,44 @@ export default function AdminDashboardPage() {
           })}
         </div>
 
-        {/* Email Sender Widget */}
-        <div className="mb-8">
-          <AdminEmailForm />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Plan Distribution */}
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-            <Card className="rounded-3xl border-border/50 h-full">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Crown className="h-4 w-4 text-amber-500" />
-                  Plan Distribution
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {planDistribution.length > 0 ? (
-                  <div className="flex items-center gap-6">
-                    <ResponsiveContainer width="50%" height={180}>
-                      <PieChart>
-                        <Pie data={planDistribution} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value">
-                          {planDistribution.map((entry, i) => (
-                            <Cell key={i} fill={entry.fill} />
-                          ))}
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="space-y-2 flex-1">
-                      {planDistribution.map((entry) => (
-                        <div key={entry.name} className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.fill }} />
-                            <span className="text-muted-foreground">{entry.name}</span>
-                          </div>
-                          <span className="font-medium">{entry.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-8">No user data</p>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Recent Users */}
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-            <Card className="rounded-3xl border-border/50 h-full">
-              <CardHeader>
-                <CardTitle className="text-base">Recent Users</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {recentUsers.map((u, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
-                      <div>
-                        <p className="text-sm font-medium">{u.name}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
+        <Card className="rounded-3xl border-border/50 mb-8">
+          <CardHeader>
+            <CardTitle>{t.recent}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {orders.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t.noRecent}</p>
+            ) : (
+              <div className="space-y-2">
+                {orders.slice(0, 8).map((order) => {
+                  const isPaid = (order.paymentStatus || order.status) === "paid";
+                  return (
+                    <div key={order.orderId || order.orderNumber} className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-2xl border border-border/60 p-3">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-semibold">
+                          {t.orderNo}: {order.orderNumber || order.orderId || "-"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.customer}: {order.userEmail || order.customerName || "-"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.package}: {order.planName || order.planId || "-"}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="rounded-full text-[10px] capitalize">{u.role}</Badge>
-                        <Badge variant="secondary" className="rounded-full text-[10px] capitalize">{u.plan}</Badge>
+                        <Badge variant={isPaid ? "default" : "secondary"}>{isPaid ? t.paid : t.open}</Badge>
+                        <Badge variant="outline">{order.receiptEmailSentAt ? t.sent : t.notSent}</Badge>
+                        <span className="text-sm font-semibold">{formatMoney(order.amountTotal, order.currency)}</span>
                       </div>
                     </div>
-                  ))}
-                  {recentUsers.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center py-4">No users found</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <AdminEmailForm />
       </div>
     </div>
   );

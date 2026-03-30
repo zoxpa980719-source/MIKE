@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe, PLAN_DETAILS } from "@/lib/stripe";
-import { requireAuth } from "@/lib/api-auth";
+import { verifyAuthToken } from "@/lib/api-auth";
 import { adminDb } from "@/lib/firebase-admin";
 import {
   buildOrderNumber,
@@ -11,9 +11,11 @@ import {
 } from "@/lib/order-confirmation-email";
 
 const SERVICE_PLAN_CATALOG: Record<string, { name: string; amountUsd: number }> = {
+  plan4999: { name: "Consulting Service", amountUsd: 4999 },
   plan299: { name: "Personal Agency Service", amountUsd: 29900 },
   plan466: { name: "Full Agency Service", amountUsd: 46600 },
   plan1599: { name: "Website Agency Service", amountUsd: 159900 },
+  "consult-service": { name: "Consulting Service", amountUsd: 4999 },
   "personal-agent": { name: "Personal Agency Service", amountUsd: 29900 },
   "full-agent": { name: "Full Agency Service", amountUsd: 46600 },
   "website-agent": { name: "Website Agency Service", amountUsd: 159900 },
@@ -73,9 +75,8 @@ async function getStripeBillingLinks(session: any) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { response: authError, user } = await requireAuth(request);
-    if (authError) return authError;
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const authResult = await verifyAuthToken(request);
+    const authUser = authResult.authenticated ? authResult.user : undefined;
 
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("session_id");
@@ -93,7 +94,16 @@ export async function GET(request: NextRequest) {
 
     const clientRef = parseClientReferenceId(session.client_reference_id);
     const sessionUserId = session.metadata?.userId ?? clientRef.userId ?? null;
-    if (!sessionUserId || sessionUserId !== user.uid) {
+    const isPublicCheckout = session.metadata?.checkoutSource === "public_homepage";
+
+    if (sessionUserId) {
+      if (!authUser) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      if (sessionUserId !== authUser.uid) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    } else if (!isPublicCheckout) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -129,14 +139,29 @@ export async function GET(request: NextRequest) {
     const customerId =
       typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
     const orderNumber = buildOrderNumber(session.id, createdAtMs);
+    const effectiveUserId = sessionUserId ?? authUser?.uid ?? null;
+    const effectiveUserEmail =
+      session.customer_details?.email ?? session.customer_email ?? authUser?.email ?? null;
+
+    if (effectiveUserId && planId && adminDb) {
+      await adminDb.collection("users").doc(effectiveUserId).set(
+        {
+          plan: planId,
+          subscriptionId,
+          customerId,
+          planUpdatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    }
 
     if (adminDb) {
       await adminDb.collection("orders").doc(session.id).set(
         {
           orderId: session.id,
           orderNumber,
-          userId: user.uid,
-          userEmail: session.customer_details?.email ?? session.customer_email ?? user.email ?? null,
+          userId: effectiveUserId,
+          userEmail: effectiveUserEmail,
           planId: planId ?? null,
           planName: planName ?? planId ?? null,
           frequency: frequency ?? null,
@@ -163,7 +188,7 @@ export async function GET(request: NextRequest) {
       const toEmail =
         (session.customer_details?.email as string | undefined) ??
         (session.customer_email as string | undefined) ??
-        user.email;
+        authUser?.email;
 
       if (toEmail) {
         const customerName =
@@ -243,7 +268,7 @@ export async function GET(request: NextRequest) {
       success: true,
       planId,
       planName,
-      userId: sessionUserId,
+      userId: effectiveUserId,
       frequency,
       subscriptionId,
       customerId,

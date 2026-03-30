@@ -39,7 +39,7 @@ interface ChatContextType {
     otherUserDetails: {
       displayName: string;
       photoURL?: string;
-      role: "employer" | "employee";
+      role: "employer" | "employee" | "admin";
     }
   ) => Promise<string>;
   startDirectMessage: (
@@ -47,8 +47,9 @@ interface ChatContextType {
     otherUserDetails: {
       displayName: string;
       photoURL?: string;
-      role: "employer" | "employee";
-    }
+      role: "employer" | "employee" | "admin";
+    },
+    chatType?: "direct" | "support"
   ) => Promise<string>;
 }
 

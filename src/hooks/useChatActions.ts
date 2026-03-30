@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback } from "react";
 import {
@@ -27,29 +27,25 @@ import type { Attachment } from "./useChatMessages";
  * All functions require an authenticated userId.
  */
 export function useChatActions(userId: string | undefined, userEmail: string | undefined) {
-
   // Upload attachments to Firebase Storage
-  const uploadAttachments = useCallback(
-    async (chatId: string, files: File[]): Promise<Attachment[]> => {
-      const attachments: Attachment[] = [];
+  const uploadAttachments = useCallback(async (chatId: string, files: File[]): Promise<Attachment[]> => {
+    const attachments: Attachment[] = [];
 
-      for (const file of files) {
-        const storageRef = ref(storage, `chats/${chatId}/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        const url = await getDownloadURL(storageRef);
+    for (const file of files) {
+      const storageRef = ref(storage, `chats/${chatId}/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
 
-        attachments.push({
-          name: file.name,
-          url,
-          type: file.type.startsWith("image/") ? "image" : "file",
-          size: file.size,
-        });
-      }
+      attachments.push({
+        name: file.name,
+        url,
+        type: file.type.startsWith("image/") ? "image" : "file",
+        size: file.size,
+      });
+    }
 
-      return attachments;
-    },
-    []
-  );
+    return attachments;
+  }, []);
 
   // Send a message (plain text or encrypted)
   const sendMessage = useCallback(
@@ -143,7 +139,7 @@ export function useChatActions(userId: string | undefined, userEmail: string | u
       otherUserDetails: {
         displayName: string;
         photoURL?: string;
-        role: "employer" | "employee";
+        role: "employer" | "employee" | "admin";
       }
     ): Promise<string> => {
       if (!userId) throw new Error("Not authenticated");
@@ -172,7 +168,7 @@ export function useChatActions(userId: string | undefined, userEmail: string | u
       const currentUserParticipant: {
         displayName: string;
         photoURL?: string;
-        role: "employer" | "employee";
+        role: "employer" | "employee" | "admin";
       } = {
         displayName: currentUserData?.displayName || userEmail || "Unknown",
         role: currentUserData?.role || "employee",
@@ -184,7 +180,7 @@ export function useChatActions(userId: string | undefined, userEmail: string | u
       const otherUserParticipant: {
         displayName: string;
         photoURL?: string;
-        role: "employer" | "employee";
+        role: "employer" | "employee" | "admin";
       } = {
         displayName: otherUserDetails.displayName,
         role: otherUserDetails.role,
@@ -219,16 +215,17 @@ export function useChatActions(userId: string | undefined, userEmail: string | u
       otherUserDetails: {
         displayName: string;
         photoURL?: string;
-        role: "employer" | "employee";
-      }
+        role: "employer" | "employee" | "admin";
+      },
+      chatType: "direct" | "support" = "direct"
     ): Promise<string> => {
       if (!userId) throw new Error("Not authenticated");
 
-      // Check for existing direct message chat
+      // Check for existing direct/support chat
       const existingQuery = query(
         collection(db, "chats"),
         where("participants", "array-contains", userId),
-        where("type", "==", "direct")
+        where("type", "==", chatType)
       );
 
       const existingSnapshot = await getDocs(existingQuery);
@@ -252,7 +249,7 @@ export function useChatActions(userId: string | undefined, userEmail: string | u
       const currentUserParticipant: {
         displayName: string;
         photoURL?: string;
-        role: "employer" | "employee";
+        role: "employer" | "employee" | "admin";
       } = {
         displayName: currentUserData?.displayName || userEmail || "Unknown",
         role: currentUserData?.role || "employee",
@@ -264,7 +261,7 @@ export function useChatActions(userId: string | undefined, userEmail: string | u
       const otherUserParticipant: {
         displayName: string;
         photoURL?: string;
-        role: "employer" | "employee";
+        role: "employer" | "employee" | "admin";
       } = {
         displayName: otherUserDetails.displayName,
         role: otherUserDetails.role,
@@ -274,7 +271,7 @@ export function useChatActions(userId: string | undefined, userEmail: string | u
       }
 
       const chatData = {
-        type: "direct",
+        type: chatType,
         participants: [userId, otherUserId],
         participantDetails: {
           [userId]: currentUserParticipant,

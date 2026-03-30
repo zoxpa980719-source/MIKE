@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Languages } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
@@ -23,4 +23,3 @@ export function LanguageToggle({ className }: { className?: string }) {
     </button>
   );
 }
-

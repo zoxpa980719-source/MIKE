@@ -24,7 +24,7 @@ export interface Chat {
     [userId: string]: {
       displayName: string;
       photoURL?: string;
-      role: "employer" | "employee";
+      role: "employer" | "employee" | "admin";
     };
   };
   displayName: string;

@@ -8,12 +8,10 @@ import { CheckCircle, PartyPopper, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { triggerFireworks } from "@/components/ui/confetti";
 import { LumaSpin } from "@/components/ui/luma-spin";
-import { useAuth } from "@/context/AuthContext";
 
 export default function CheckoutSuccessPage() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [, setPlanUpdated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +19,7 @@ export default function CheckoutSuccessPage() {
 
   useEffect(() => {
     const verifyAndUpdatePlan = async () => {
-      if (!sessionId || !user) {
+      if (!sessionId) {
         setLoading(false);
         return;
       }
@@ -34,11 +32,11 @@ export default function CheckoutSuccessPage() {
           throw new Error(data.error || "Failed to verify payment");
         }
 
-        if (data.planId && data.userId === user.uid) {
+        if (data.planId) {
           setPlanInfo({ name: data.planName || data.planId, id: data.planId });
           setPlanUpdated(true);
-          triggerFireworks(5000);
         }
+        triggerFireworks(5000);
       } catch (err: any) {
         console.error("Plan update error:", err);
         setError(err.message);
@@ -49,7 +47,7 @@ export default function CheckoutSuccessPage() {
     };
 
     verifyAndUpdatePlan();
-  }, [sessionId, user]);
+  }, [sessionId]);
 
   if (loading) {
     return (

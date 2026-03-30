@@ -28,6 +28,14 @@ type SendOrderReceiptInput = {
 };
 
 const PACKAGE_INFO: Record<string, { name: string; items: string[] }> = {
+  plan4999: {
+    name: "Consulting Service",
+    items: [
+      "30-minute 1-on-1 consultation call",
+      "Current setup and risk checkpoint review",
+      "Actionable next-step checklist",
+    ],
+  },
   plan299: {
     name: "Personal Agency Service",
     items: [
@@ -76,6 +84,14 @@ const PACKAGE_INFO: Record<string, { name: string; items: string[] }> = {
       "Includes all Full Agency Service benefits",
       "High-conversion website setup",
       "E-commerce platform onboarding support",
+    ],
+  },
+  "consult-service": {
+    name: "Consulting Service",
+    items: [
+      "30-minute 1-on-1 consultation call",
+      "Current setup and risk checkpoint review",
+      "Actionable next-step checklist",
     ],
   },
   pro: {
@@ -157,61 +173,6 @@ function getResendSendConfig() {
         .filter(Boolean)
     : undefined;
   return { resend, from, bcc };
-}
-
-async function downloadPdfAsBase64(url?: string | null) {
-  if (!url) return null;
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.toLowerCase().includes("pdf")) {
-      return null;
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    return buffer.toString("base64");
-  } catch (error) {
-    console.warn("[order-receipt-email] Failed to download PDF attachment", error);
-    return null;
-  }
-}
-
-function buildReceiptSvgBase64(input: SendOrderReceiptInput) {
-  const orderDate = formatOrderDate(input.orderDate);
-  const amount = formatAmount(input.amountTotal, input.currency);
-  const safeName = escapeHtml(input.customerName);
-  const safeOrder = escapeHtml(input.orderNumber);
-  const safePlan = escapeHtml(input.planName);
-
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1320" viewBox="0 0 960 1320">
-  <rect width="960" height="1320" fill="#f3f6fb"/>
-  <rect x="70" y="70" width="820" height="1180" rx="26" fill="#ffffff" stroke="#dbe2ea"/>
-  <rect x="70" y="70" width="820" height="170" rx="26" fill="#1f3b74"/>
-  <text x="110" y="145" font-size="40" font-family="Arial, sans-serif" fill="#ffffff" font-weight="700">YINHNG Receipt</text>
-  <text x="110" y="195" font-size="24" font-family="Arial, sans-serif" fill="#d7e4ff">Order #${safeOrder}</text>
-
-  <text x="110" y="300" font-size="30" font-family="Arial, sans-serif" fill="#1f2937" font-weight="700">Customer</text>
-  <text x="110" y="345" font-size="28" font-family="Arial, sans-serif" fill="#111827">${safeName}</text>
-
-  <text x="110" y="430" font-size="30" font-family="Arial, sans-serif" fill="#1f2937" font-weight="700">Service Package</text>
-  <text x="110" y="475" font-size="28" font-family="Arial, sans-serif" fill="#111827">${safePlan}</text>
-
-  <text x="110" y="560" font-size="30" font-family="Arial, sans-serif" fill="#1f2937" font-weight="700">Order Date</text>
-  <text x="110" y="605" font-size="28" font-family="Arial, sans-serif" fill="#111827">${orderDate}</text>
-
-  <rect x="110" y="680" width="740" height="170" rx="18" fill="#ecfdf5" stroke="#a7f3d0"/>
-  <text x="145" y="750" font-size="28" font-family="Arial, sans-serif" fill="#065f46" font-weight="700">Amount Paid</text>
-  <text x="145" y="810" font-size="56" font-family="Arial, sans-serif" fill="#047857" font-weight="700">${amount}</text>
-
-  <text x="110" y="950" font-size="24" font-family="Arial, sans-serif" fill="#4b5563">This receipt image is generated automatically by YINHNG.</text>
-  <text x="110" y="995" font-size="24" font-family="Arial, sans-serif" fill="#4b5563">For official Stripe invoice, please use the PDF attachment.</text>
-
-  <text x="110" y="1120" font-size="24" font-family="Arial, sans-serif" fill="#6b7280">YINHNG Team</text>
-</svg>
-  `.trim();
-
-  return Buffer.from(svg, "utf8").toString("base64");
 }
 
 export async function sendOrderConfirmationEmail(input: SendOrderConfirmationInput) {
@@ -300,6 +261,10 @@ export async function sendOrderReceiptEmail(input: SendOrderReceiptInput) {
       `<li style="margin: 6px 0;"><a href="${escapeHtml(input.stripeInvoicePdfUrl)}" target="_blank" rel="noopener noreferrer" style="color:#0f766e; font-weight:600; text-decoration:none;">Download invoice PDF</a></li>`
     );
   }
+  const primaryReceiptUrl = input.stripeReceiptUrl || input.stripeInvoiceUrl || input.stripeInvoicePdfUrl || null;
+  const primaryReceiptButton = primaryReceiptUrl
+    ? `<a href="${escapeHtml(primaryReceiptUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block; background:#0f766e; color:#ffffff; text-decoration:none; font-weight:700; border-radius:10px; padding:12px 18px; margin-top:12px;">Open Official Stripe Receipt</a>`
+    : "";
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.65; color: #111827; max-width: 680px; margin: 0 auto;">
@@ -316,30 +281,11 @@ export async function sendOrderReceiptEmail(input: SendOrderReceiptInput) {
       <div style="margin-top:16px; border: 1px solid #d1fae5; background: #ecfdf5; border-radius: 10px; padding: 12px;">
         <div style="font-weight: 600; margin-bottom: 6px; color: #065f46;">Stripe Billing Documents</div>
         <ul style="margin:0; padding-left: 18px;">${links.join("")}</ul>
+        ${primaryReceiptButton}
       </div>
       <p style="margin-top: 18px;">Best regards,<br/>YINHNG Team</p>
     </div>
   `;
-
-  const pdfBase64 = await downloadPdfAsBase64(input.stripeInvoicePdfUrl);
-  const receiptImageBase64 = buildReceiptSvgBase64(input);
-  const attachments = pdfBase64
-    ? [
-        {
-          filename: `invoice-${input.orderNumber}.pdf`,
-          content: pdfBase64,
-        },
-        {
-          filename: `receipt-${input.orderNumber}.svg`,
-          content: receiptImageBase64,
-        },
-      ]
-    : [
-        {
-          filename: `receipt-${input.orderNumber}.svg`,
-          content: receiptImageBase64,
-        },
-      ];
 
   const { data, error } = await resend.emails.send({
     from,
@@ -347,7 +293,6 @@ export async function sendOrderReceiptEmail(input: SendOrderReceiptInput) {
     bcc,
     subject,
     html,
-    attachments,
   });
 
   if (error) {

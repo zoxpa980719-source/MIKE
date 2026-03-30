@@ -1,11 +1,10 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import {
   Sidebar,
   SidebarBody,
   SidebarLink,
-  useSidebar,
 } from "@/components/ui/animated-sidebar";
 import {
   Briefcase,
@@ -47,7 +46,9 @@ const copy = {
     inbox: "消息",
     postings: "职位发布",
     analytics: "分析",
-    adminDashboard: "管理后台",
+    adminDashboard: "管理员后台",
+    adminOrders: "全部订单",
+    adminMessages: "客户留言",
   },
   en: {
     dashboard: "Dashboard",
@@ -61,6 +62,8 @@ const copy = {
     postings: "Postings",
     analytics: "Analytics",
     adminDashboard: "Admin Dashboard",
+    adminOrders: "All Orders",
+    adminMessages: "Customer Messages",
   },
 } as const;
 
@@ -75,63 +78,47 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
     {
       label: t.dashboard,
       href: "/dashboard",
-      icon: (
-        <LayoutDashboard className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <LayoutDashboard className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.opportunities,
       href: "/opportunities",
       disabled: true,
-      icon: (
-        <Briefcase className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Briefcase className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.applications,
       href: "/applications",
       disabled: true,
-      icon: (
-        <Kanban className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Kanban className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.plans,
       href: "/pricing",
       disabled: true,
-      icon: (
-        <Crown className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Crown className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.orders,
       href: "/orders",
-      icon: (
-        <Receipt className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Receipt className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.launchPad,
       href: "/ai-tools",
       disabled: true,
-      icon: (
-        <Rocket className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Rocket className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.profile,
       href: "/profile",
       disabled: true,
-      icon: (
-        <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.inbox,
       href: "/inbox",
-      icon: (
-        <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
   ];
 
@@ -139,44 +126,32 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
     {
       label: t.dashboard,
       href: "/employer/dashboard",
-      icon: (
-        <Building2 className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Building2 className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.postings,
       href: "/employer/postings",
-      icon: (
-        <FileText className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <FileText className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.analytics,
       href: "/employer/analytics",
-      icon: (
-        <BarChartHorizontal className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <BarChartHorizontal className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.profile,
       href: "/employer/profile",
-      icon: (
-        <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <User className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.orders,
       href: "/orders",
-      icon: (
-        <Receipt className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Receipt className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
     {
       label: t.inbox,
       href: "/inbox",
-      icon: (
-        <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
   ];
 
@@ -184,9 +159,17 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
     {
       label: t.adminDashboard,
       href: "/admin",
-      icon: (
-        <Shield className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />
-      ),
+      icon: <Shield className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
+    },
+    {
+      label: t.adminOrders,
+      href: "/admin/orders",
+      icon: <Receipt className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
+    },
+    {
+      label: t.adminMessages,
+      href: "/inbox",
+      icon: <MessageSquare className="text-neutral-700 dark:text-neutral-200 h-5 w-5 flex-shrink-0" />,
     },
   ];
 
@@ -225,9 +208,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                 <SidebarLink
                   key={idx}
                   link={link}
-                  className={cn(
-                    pathname === link.href && "bg-neutral-200 dark:bg-neutral-700 rounded-lg px-2"
-                  )}
+                  className={cn(pathname === link.href && "bg-neutral-200 dark:bg-neutral-700 rounded-lg px-2")}
                 />
               ))}
             </div>
@@ -247,9 +228,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
             <UserNav />
           </div>
         </header>
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
-          {children}
-        </main>
+        <main className="flex-1 p-4 md:p-6 overflow-auto">{children}</main>
       </div>
     </div>
   );
@@ -257,10 +236,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
 
 export const Logo = ({ href }: { href: string }) => {
   return (
-    <Link
-      href={href}
-      className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20"
-    >
+    <Link href={href} className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20">
       <Image
         src="https://i.postimg.cc/nLrDYrHW/icon.png"
         alt="YINHNG logo"
@@ -281,10 +257,7 @@ export const Logo = ({ href }: { href: string }) => {
 
 export const LogoIcon = ({ href }: { href: string }) => {
   return (
-    <Link
-      href={href}
-      className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20"
-    >
+    <Link href={href} className="font-normal flex space-x-2 items-center text-sm text-black py-1 relative z-20">
       <Image
         src="https://i.postimg.cc/nLrDYrHW/icon.png"
         alt="YINHNG logo"

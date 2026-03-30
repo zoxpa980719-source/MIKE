@@ -40,6 +40,7 @@ type ServicePlan = {
   badge?: string;
   benefits: string[];
   ctaLabel: string;
+  paymentLink?: string;
 };
 
 const copy = {
@@ -163,6 +164,7 @@ function formatMoney(order: OrderRecord) {
 }
 
 function inferPlanIdByAmount(amountTotal?: number) {
+  if (amountTotal === 4999) return "plan4999";
   if (amountTotal === 29900) return "plan299";
   if (amountTotal === 46600) return "plan466";
   if (amountTotal === 159900) return "plan1599";
@@ -172,6 +174,15 @@ function inferPlanIdByAmount(amountTotal?: number) {
 export default function DashboardPage() {
   const { locale } = useLanguage();
   const t = copy[locale];
+  const consultName = locale === "zh" ? "咨询服务" : "Consulting Service";
+  const consultBenefits =
+    locale === "zh"
+      ? ["30分钟 1 对 1 咨询沟通", "现状与风险点快速评估", "提供下一步可执行建议清单"]
+      : [
+          "30-minute 1-on-1 consultation call",
+          "Current setup and risk checkpoint review",
+          "Actionable next-step checklist",
+        ];
 
   const servicePlans: ServicePlan[] = useMemo(
     () => [
@@ -203,8 +214,17 @@ export default function DashboardPage() {
         benefits: [t.siteBenefit1, t.siteBenefit2, t.siteBenefit3],
         ctaLabel: t.buyNow,
       },
+      {
+        id: "consult-service",
+        trackingPlanId: "plan4999",
+        amountCents: 4999,
+        name: consultName,
+        priceLabel: "$49.99",
+        benefits: consultBenefits,
+        ctaLabel: t.buyNow,
+      },
     ],
-    [t]
+    [t, consultName, consultBenefits]
   );
 
   const [loading, setLoading] = useState(true);
@@ -213,6 +233,8 @@ export default function DashboardPage() {
   const [selectedPlanId, setSelectedPlanId] = useState<string>("full-agent");
   const [currentUserId, setCurrentUserId] = useState<string>("");
   const [checkoutPlanId, setCheckoutPlanId] = useState<string | null>(null);
+  const [sendingLatestReceipt, setSendingLatestReceipt] = useState(false);
+  const [latestReceiptResult, setLatestReceiptResult] = useState<string>("");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -265,12 +287,16 @@ export default function DashboardPage() {
     [selectedPlanId, servicePlans]
   );
 
-  const startCheckout = async (trackingPlanId: string) => {
+  const startCheckout = async (trackingPlanId: string, paymentLink?: string) => {
     if (!currentUserId) {
       window.alert("Please sign in before purchasing.");
       return;
     }
     if (checkoutPlanId) return;
+    if (paymentLink) {
+      window.location.href = paymentLink;
+      return;
+    }
 
     setCheckoutPlanId(trackingPlanId);
     try {
@@ -297,6 +323,43 @@ export default function DashboardPage() {
     }
   };
 
+  const sendLatestReceiptTest = async () => {
+    if (sendingLatestReceipt) return;
+    if (!auth.currentUser) {
+      setLatestReceiptResult(locale === "zh" ? "请先登录后再测试。" : "Please sign in before testing.");
+      return;
+    }
+
+    setSendingLatestReceipt(true);
+    setLatestReceiptResult("");
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const response = await fetch("/api/orders/send-latest-receipt", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send latest receipt");
+      }
+      setLatestReceiptResult(
+        locale === "zh"
+          ? `已发送最近订单收据到：${data.toEmail}`
+          : `Latest order receipt sent to: ${data.toEmail}`
+      );
+    } catch (error: any) {
+      setLatestReceiptResult(
+        locale === "zh"
+          ? `发送失败：${error?.message || "未知错误"}`
+          : `Send failed: ${error?.message || "Unknown error"}`
+      );
+    } finally {
+      setSendingLatestReceipt(false);
+    }
+  };
+
   const planNameMap: Record<string, string> = {
     free: t.planFree,
     starter: t.planStarter,
@@ -306,9 +369,11 @@ export default function DashboardPage() {
   };
 
   const orderPlanNameMap: Record<string, string> = {
+    plan4999: consultName,
     plan299: t.personalAgent,
     plan466: t.fullAgent,
     plan1599: t.websiteAgent,
+    "consult-service": consultName,
     "personal-agent": t.personalAgent,
     "full-agent": t.fullAgent,
     "website-agent": t.websiteAgent,
@@ -362,7 +427,7 @@ export default function DashboardPage() {
             </div>
             <button
               type="button"
-              onClick={() => startCheckout(selectedPlan.trackingPlanId)}
+              onClick={() => startCheckout(selectedPlan.trackingPlanId, selectedPlan.paymentLink)}
               disabled={Boolean(checkoutPlanId)}
               className="inline-flex h-10 items-center justify-center rounded-full bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
             >
@@ -371,7 +436,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {servicePlans.map((plan) => {
             const isSelected = selectedPlanId === plan.id;
             return (
@@ -417,7 +482,7 @@ export default function DashboardPage() {
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      void startCheckout(plan.trackingPlanId);
+                      void startCheckout(plan.trackingPlanId, plan.paymentLink);
                     }}
                     disabled={Boolean(checkoutPlanId)}
                     className={[
@@ -440,11 +505,30 @@ export default function DashboardPage() {
       <section className="rounded-3xl border border-gray-200 bg-white p-6 md:p-8 shadow-sm">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight">{t.myOrders}</h2>
-          <Link href="#packages" className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800">
-            <Package className="h-4 w-4" />
-            {t.browseServices}
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void sendLatestReceiptTest()}
+              disabled={sendingLatestReceipt}
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {sendingLatestReceipt
+                ? locale === "zh"
+                  ? "发送中..."
+                  : "Sending..."
+                : locale === "zh"
+                  ? "测试发送最近订单收据"
+                  : "Send Latest Receipt (Test)"}
+            </button>
+            <Link href="#packages" className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800">
+              <Package className="h-4 w-4" />
+              {t.browseServices}
+            </Link>
+          </div>
         </div>
+        {latestReceiptResult ? (
+          <p className="mb-4 text-sm text-gray-600">{latestReceiptResult}</p>
+        ) : null}
 
         {orders.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-gray-200 py-14 text-center">

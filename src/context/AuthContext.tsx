@@ -1,14 +1,13 @@
+﻿"use client";
 
-'use client';
-
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
-import { app, db } from '@/lib/firebase'; // Ensure you have this file
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { getAuth, onAuthStateChanged, User } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
+import { app, db } from "@/lib/firebase";
 
 interface UserProfile {
-    role: string;
-    [key: string]: any;
+  role: string;
+  [key: string]: any;
 }
 
 interface AuthContextType {
@@ -17,6 +16,10 @@ interface AuthContextType {
   role: string | null;
   userProfile: UserProfile | null;
 }
+
+const PRIMARY_ADMIN_EMAIL = "mike@yinhng.com";
+
+const normalizeEmail = (email?: string | null) => (email || "").trim().toLowerCase();
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -28,57 +31,63 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const auth = getAuth(app);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      if (user) {
-        // Set session cookie for middleware auth checks
-        // Firebase Hosting only forwards cookies named "__session"
+    const unsubscribeAuth = onAuthStateChanged(auth, async (nextUser) => {
+      setUser(nextUser);
+
+      if (nextUser) {
         try {
-          const token = await user.getIdToken();
+          const token = await nextUser.getIdToken();
           const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
           const secureAttr = isHttps ? "; Secure" : "";
           document.cookie = `__session=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${secureAttr}`;
-        } catch (e) {
-          console.error("Failed to set session cookie:", e);
+        } catch (error) {
+          console.error("Failed to set session cookie:", error);
         }
 
-        const docRef = doc(db, "users", user.uid);
-        const unsubscribeProfile = onSnapshot(docRef, (doc) => {
-            if (doc.exists()) {
-                const profileData = doc.data() as UserProfile;
-                
-                // TEMPORARY: Unlock all premium features for now
-                profileData.plan = "pro";
+        const isPrimaryAdmin = normalizeEmail(nextUser.email) === PRIMARY_ADMIN_EMAIL;
+        const docRef = doc(db, "users", nextUser.uid);
 
-                setRole(profileData.role);
-                setUserProfile(profileData);
-            }
-            setLoading(false);
+        const unsubscribeProfile = onSnapshot(docRef, (snap) => {
+          if (snap.exists()) {
+            const profileData = snap.data() as UserProfile;
+            profileData.plan = "pro";
+
+            const effectiveRole = isPrimaryAdmin ? "admin" : profileData.role;
+            setRole(effectiveRole);
+            setUserProfile({ ...profileData, role: effectiveRole });
+          } else if (isPrimaryAdmin) {
+            setRole("admin");
+            setUserProfile({
+              uid: nextUser.uid,
+              email: nextUser.email,
+              displayName: nextUser.displayName || "Mike",
+              role: "admin",
+              plan: "pro",
+            });
+          }
+
+          setLoading(false);
         });
+
         return () => unsubscribeProfile();
-      } else {
-        // Clear session cookie on logout
-        document.cookie = "__session=; path=/; max-age=0";
-        setRole(null);
-        setUserProfile(null);
-        setLoading(false);
       }
+
+      document.cookie = "__session=; path=/; max-age=0";
+      setRole(null);
+      setUserProfile(null);
+      setLoading(false);
     });
 
     return () => unsubscribeAuth();
   }, [auth]);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, role, userProfile }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, loading, role, userProfile }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

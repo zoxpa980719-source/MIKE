@@ -1,39 +1,101 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
 import { useNotifications } from "@/context/NotificationContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { useRouter, useSearchParams } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { 
-  MessageSquare, 
-  Loader2, 
-  Bell,
-} from "lucide-react";
+import { MessageSquare, Loader2, Bell, LifeBuoy } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import Link from "next/link";
 import { ChatList } from "@/components/chat/ChatList";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { getNotificationIcon, getNotificationColor } from "@/types/notification-types";
 
+const copy = {
+  zh: {
+    title: "消息中心",
+    tabs: {
+      messages: "消息",
+      notifications: "通知",
+    },
+    conversations: "会话列表",
+    selectConversation: "请选择一个会话开始聊天",
+    markAllRead: "全部标记为已读",
+    noNotifications: "暂无通知",
+    noNotificationsHint: "申请进度、付款状态和系统提醒会显示在这里",
+    support: {
+      contact: "联系管理员",
+      contacting: "正在创建会话...",
+      hint: "提交问题后，管理员可在后台直接回复你。",
+      openFailed: "创建客服会话失败，请稍后重试。",
+      noAdmin: "暂时没有可用管理员，请稍后重试。",
+    },
+    adminHint: "客户留言会在此处实时显示，点击即可回复。",
+  },
+  en: {
+    title: "Inbox",
+    tabs: {
+      messages: "Messages",
+      notifications: "Notifications",
+    },
+    conversations: "Conversations",
+    selectConversation: "Select a conversation to start messaging",
+    markAllRead: "Mark all as read",
+    noNotifications: "No notifications yet",
+    noNotificationsHint: "Application updates, payment status, and system alerts appear here",
+    support: {
+      contact: "Contact Admin",
+      contacting: "Creating chat...",
+      hint: "After sending your message, admins can reply directly from the admin side.",
+      openFailed: "Failed to create support chat. Please try again.",
+      noAdmin: "No admin account is available right now. Please try again later.",
+    },
+    adminHint: "Customer messages will appear here in real time. Click any conversation to reply.",
+  },
+} as const;
+
+type SupportAdminResponse = {
+  admin?: {
+    uid: string;
+    displayName?: string | null;
+    photoURL?: string | null;
+  };
+  error?: string;
+};
+
 export default function InboxPage() {
-  const { user, loading: authLoading } = useAuth();
-  const { chats, loading: chatsLoading, activeChat, setActiveChat, unreadCount } = useChat();
+  const { user, userProfile, loading: authLoading } = useAuth();
+  const {
+    chats,
+    loading: chatsLoading,
+    activeChat,
+    setActiveChat,
+    unreadCount,
+    startDirectMessage,
+  } = useChat();
   const { notifications, unreadCount: notifUnreadCount, markAsRead, markAllRead } = useNotifications();
+  const { locale } = useLanguage();
+  const t = copy[locale];
+  const isAdmin = userProfile?.role === "admin";
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("messages");
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportError, setSupportError] = useState<string | null>(null);
 
   // Handle chat query parameter to open specific chat
   useEffect(() => {
     const chatId = searchParams.get("chat");
     if (chatId && chats.length > 0) {
-      const chat = chats.find(c => c.id === chatId);
+      const chat = chats.find((c) => c.id === chatId);
       if (chat) {
         setActiveChat(chat);
         setActiveTab("messages");
@@ -47,7 +109,48 @@ export default function InboxPage() {
     }
   }, [user, authLoading, router]);
 
-  if (authLoading) {
+  const handleOpenSupportChat = async () => {
+    if (!user || supportLoading || isAdmin) return;
+
+    setSupportLoading(true);
+    setSupportError(null);
+
+    try {
+      const response = await fetch("/api/support/admin", {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      const payload = (await response.json().catch(() => null)) as SupportAdminResponse | null;
+      if (!response.ok || !payload?.admin?.uid) {
+        throw new Error(payload?.error || t.support.noAdmin);
+      }
+
+      const chatId = await startDirectMessage(
+        payload.admin.uid,
+        {
+          displayName: payload.admin.displayName || "YINHNG Support",
+          photoURL: payload.admin.photoURL || undefined,
+          role: "admin",
+        },
+        "support"
+      );
+
+      const chatSnap = await getDoc(doc(db, "chats", chatId));
+      if (chatSnap.exists()) {
+        setActiveChat({ id: chatSnap.id, ...(chatSnap.data() as Record<string, unknown>) } as any);
+      }
+      setActiveTab("messages");
+    } catch (error: any) {
+      setSupportError(error?.message || t.support.openFailed);
+    } finally {
+      setSupportLoading(false);
+    }
+  };
+
+  if (authLoading || chatsLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -61,22 +164,20 @@ export default function InboxPage() {
 
   return (
     <div className="h-[calc(100vh-58px)] flex flex-col -m-4 md:-m-6 p-2 overflow-hidden">
-      {/* Header - compact */}
       <div className="flex items-center gap-3 mb-4 shrink-0">
         <div className="p-2 bg-primary/10 rounded-lg">
           <MessageSquare className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-lg font-bold text-foreground">Inbox</h1>
+          <h1 className="text-lg font-bold text-foreground">{t.title}</h1>
         </div>
       </div>
 
-      {/* Tabs for Messages and Notifications */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         <TabsList className="w-full justify-start shrink-0 rounded-3xl">
           <TabsTrigger value="messages" className="gap-2 rounded-3xl">
             <MessageSquare className="h-4 w-4" />
-            Messages
+            {t.tabs.messages}
             {unreadCount > 0 && (
               <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
                 {unreadCount}
@@ -85,7 +186,7 @@ export default function InboxPage() {
           </TabsTrigger>
           <TabsTrigger value="notifications" className="gap-2 rounded-3xl">
             <Bell className="h-4 w-4" />
-            Notifications
+            {t.tabs.notifications}
             {notifUnreadCount > 0 && (
               <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
                 {notifUnreadCount}
@@ -94,48 +195,69 @@ export default function InboxPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Messages Tab */}
         <TabsContent value="messages" className="flex-1 mt-4 min-h-0">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 h-full">
-            {/* Chat List */}
-            <div className="md:col-span-1 border rounded-3xl overflow-hidden bg-card flex flex-col">
+            <div
+              className={cn(
+                "md:col-span-1 border rounded-3xl overflow-hidden bg-card flex flex-col",
+                activeChat ? "hidden md:flex" : "flex"
+              )}
+            >
               <div className="p-3 border-b bg-muted/30 shrink-0">
-                <h3 className="font-medium text-sm">Conversations</h3>
+                <h3 className="font-medium text-sm">{t.conversations}</h3>
+                {isAdmin ? (
+                  <p className="text-xs text-muted-foreground mt-1">{t.adminHint}</p>
+                ) : (
+                  <div className="mt-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleOpenSupportChat}
+                      disabled={supportLoading}
+                      className="w-full gap-2 rounded-full"
+                    >
+                      {supportLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <LifeBuoy className="h-4 w-4" />
+                      )}
+                      {supportLoading ? t.support.contacting : t.support.contact}
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-1">{t.support.hint}</p>
+                    {supportError ? (
+                      <p className="text-xs text-red-500 mt-1">{supportError}</p>
+                    ) : null}
+                  </div>
+                )}
               </div>
               <div className="flex-1 overflow-y-auto p-2 rounded-3xl">
                 <ChatList />
               </div>
             </div>
 
-            {/* Chat Window */}
-            <div className="md:col-span-3 rounded-3xl overflow-hidden flex flex-col">
+            <div
+              className={cn(
+                "md:col-span-3 rounded-3xl overflow-hidden flex flex-col",
+                activeChat ? "flex" : "hidden md:flex"
+              )}
+            >
               {activeChat ? (
-                <ChatWindow 
-                  showBackButton={true}
-                  onBack={() => setActiveChat(null)}
-                />
+                <ChatWindow showBackButton={true} onBack={() => setActiveChat(null)} />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <MessageSquare className="h-12 w-12 mb-4 opacity-50" />
-                  <p className="text-sm">Select a conversation to start messaging</p>
+                  <p className="text-sm">{t.selectConversation}</p>
                 </div>
               )}
             </div>
           </div>
         </TabsContent>
 
-        {/* Notifications Tab */}
         <TabsContent value="notifications" className="flex-1 mt-4 min-h-0 overflow-y-auto">
-          {/* Mark all read button */}
           {notifUnreadCount > 0 && (
             <div className="flex justify-end mb-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => markAllRead()}
-                className="text-xs"
-              >
-                Mark all as read
+              <Button variant="ghost" size="sm" onClick={() => markAllRead()} className="text-xs">
+                {t.markAllRead}
               </Button>
             </div>
           )}
@@ -143,10 +265,8 @@ export default function InboxPage() {
           {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <Bell className="h-12 w-12 mb-4 opacity-50" />
-              <p className="text-lg font-medium">No notifications yet</p>
-              <p className="text-sm">
-                You&apos;ll see updates about applications, followers, and more here
-              </p>
+              <p className="text-lg font-medium">{t.noNotifications}</p>
+              <p className="text-sm">{t.noNotificationsHint}</p>
             </div>
           ) : (
             <div className="space-y-2 pr-2">
@@ -175,19 +295,10 @@ export default function InboxPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <p className={cn(
-                          "text-sm truncate",
-                          !notification.read ? "font-semibold" : "font-medium"
-                        )}>
-                          {notification.title}
-                        </p>
-                        {!notification.read && (
-                          <div className="h-2 w-2 rounded-full bg-primary shrink-0" />
-                        )}
+                        <p className={cn("text-sm truncate", !notification.read ? "font-semibold" : "font-medium")}>{notification.title}</p>
+                        {!notification.read && <div className="h-2 w-2 rounded-full bg-primary shrink-0" />}
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {notification.message}
-                      </p>
+                      <p className="text-sm text-muted-foreground line-clamp-2">{notification.message}</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {(() => {
                           const ts = notification.createdAt as any;

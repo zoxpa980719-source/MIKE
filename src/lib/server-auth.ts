@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 
+const PRIMARY_ADMIN_EMAIL = "mike@yinhng.com";
+
 export interface ServerAuthenticatedUser {
   uid: string;
   email?: string;
@@ -28,13 +30,16 @@ export async function getServerAuthenticatedUser(): Promise<ServerAuthenticatedU
   const decodedToken = await adminAuth!.verifyIdToken(token);
   const userDoc = await adminDb!.collection("users").doc(decodedToken.uid).get();
   const profile = userDoc.exists ? (userDoc.data() as Record<string, any>) : null;
+  const normalizedEmail = (decodedToken.email || "").trim().toLowerCase();
+  const effectiveRole =
+    normalizedEmail === PRIMARY_ADMIN_EMAIL ? "admin" : profile?.role;
 
   return {
     uid: decodedToken.uid,
     email: decodedToken.email,
     emailVerified: decodedToken.email_verified,
     profile,
-    role: profile?.role,
+    role: effectiveRole,
   };
 }
 
@@ -54,4 +59,3 @@ export async function requireServerRole(
 
   return user;
 }
-
