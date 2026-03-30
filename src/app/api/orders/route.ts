@@ -70,21 +70,19 @@ export async function GET(request: NextRequest) {
         orderMap.set(doc.id, { id: doc.id, data: doc.data() as OrderRecord });
       });
 
-      // Fallback: scan recent orders for case-insensitive email match.
-      if (orderMap.size === 0) {
-        const recent = await db
-          .collection("orders")
-          .orderBy("createdAtMs", "desc")
-          .limit(300)
-          .get();
-        recent.docs.forEach((doc) => {
-          const data = doc.data() as OrderRecord;
-          const email = normalizeEmail(data.userEmail);
-          if (email && email === normalizedEmail) {
-            orderMap.set(doc.id, { id: doc.id, data });
-          }
-        });
-      }
+      // Fallback: always scan recent orders for case-insensitive email match.
+      const recent = await db
+        .collection("orders")
+        .orderBy("createdAtMs", "desc")
+        .limit(300)
+        .get();
+      recent.docs.forEach((doc) => {
+        const data = doc.data() as OrderRecord;
+        const email = normalizeEmail(data.userEmail);
+        if (email && email === normalizedEmail) {
+          orderMap.set(doc.id, { id: doc.id, data });
+        }
+      });
     }
 
     const orders = Array.from(orderMap.values())
