@@ -13,16 +13,16 @@ type LanguageContextValue = {
 const LanguageContext = createContext<LanguageContextValue | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("zh");
+  const [locale, setLocaleState] = useState<Locale>("en");
 
   useEffect(() => {
     const cached = window.localStorage.getItem("site_locale");
+    const manuallySelected = window.localStorage.getItem("site_locale_manual") === "1";
     if (cached === "zh" || cached === "en") {
-      setLocaleState(cached);
+      setLocaleState(manuallySelected ? cached : "en");
       return;
     }
-    const browserPrefersChinese = navigator.language.toLowerCase().startsWith("zh");
-    setLocaleState(browserPrefersChinese ? "zh" : "en");
+    setLocaleState("en");
   }, []);
 
   useEffect(() => {
@@ -33,8 +33,14 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       locale,
-      setLocale: (nextLocale: Locale) => setLocaleState(nextLocale),
-      toggleLocale: () => setLocaleState((prev) => (prev === "zh" ? "en" : "zh")),
+      setLocale: (nextLocale: Locale) => {
+        window.localStorage.setItem("site_locale_manual", "1");
+        setLocaleState(nextLocale);
+      },
+      toggleLocale: () => {
+        window.localStorage.setItem("site_locale_manual", "1");
+        setLocaleState((prev) => (prev === "zh" ? "en" : "zh"));
+      },
     }),
     [locale]
   );
@@ -49,4 +55,3 @@ export function useLanguage() {
   }
   return context;
 }
-

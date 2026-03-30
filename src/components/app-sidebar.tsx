@@ -216,18 +216,23 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
         </SidebarBody>
       </Sidebar>
       <div className="flex flex-1 flex-col overflow-hidden rounded-l-3xl bg-white dark:bg-neutral-900">
-        <header className="sticky top-0 z-10 flex h-10 shrink-0 items-center justify-between gap-4 dark:border-neutral-700 px-4 sm:h-auto sm:px-6 py-2">
+        <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-2 border-b border-neutral-200/70 bg-white/90 px-3 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/90 sm:h-auto sm:px-6 sm:py-2">
           <div className="flex-1" />
-          <div className="flex-1 flex justify-center max-w-xl">
+          <div className="hidden flex-1 justify-center max-w-xl md:flex">
             <ConditionalSearchBar />
           </div>
-          <div className="flex-1 flex items-center justify-end gap-4">
-            <NotificationsDropdown />
-            <LanguageToggle />
+          <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
+            <div className="hidden sm:block">
+              <NotificationsDropdown />
+            </div>
+            <LanguageToggle className="h-8 px-2 text-xs sm:h-9 sm:px-3 sm:text-sm" />
             <ThemeToggle />
             <UserNav />
           </div>
         </header>
+        <div className="px-3 pb-2 pt-2 md:hidden">
+          <ConditionalSearchBar />
+        </div>
         <main className="flex-1 p-4 md:p-6 overflow-auto">{children}</main>
       </div>
     </div>

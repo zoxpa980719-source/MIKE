@@ -26,6 +26,7 @@ import { handleFirstLogin } from "@/lib/automated-email-service";
 import { AnimatedCharacters } from "@/components/ui/animated-characters";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { toPublicProfile } from "@/lib/public-profile";
+import { LanguageToggle } from "@/components/language-toggle";
 import { getAdminEmails } from "./actions";
 
 const PRIMARY_ADMIN_EMAIL = "mike@yinhng.com";
@@ -208,7 +209,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen max-h-screen overflow-hidden grid lg:grid-cols-2">
+    <div className="relative min-h-screen max-h-screen overflow-hidden grid lg:grid-cols-2">
+      <div className="absolute right-4 top-4 z-30">
+        <LanguageToggle />
+      </div>
       {/* Left Content Section with Animated Characters */}
       <div className="relative hidden lg:flex flex-col justify-between bg-gradient-to-br from-gray-400 via-gray-500 to-gray-600 dark:from-white/90 dark:via-white/80 dark:to-white/70 p-12 text-white dark:text-gray-900">
         <div className="relative z-20">
