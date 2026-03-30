@@ -260,13 +260,33 @@ export default function DashboardPage() {
         }
         setCurrentUserId(currentUser.uid);
 
-        const q = query(collection(db, "orders"), where("userId", "==", currentUser.uid));
-        const querySnapshot = await getDocs(q);
-        const fetchedOrders: OrderRecord[] = querySnapshot.docs.map((item) => ({
-          id: item.id,
-          ...(item.data() as Omit<OrderRecord, "id">),
-        }));
-        setOrders(fetchedOrders);
+        try {
+          const idToken = await currentUser.getIdToken();
+          const response = await fetch("/api/orders", {
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+            },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const fetchedOrders: OrderRecord[] = (data?.orders || []).map((item: any) => ({
+              id: item.orderId || item.id,
+              ...item,
+            }));
+            setOrders(fetchedOrders);
+          } else {
+            throw new Error("Failed to load orders from API");
+          }
+        } catch {
+          // Fallback to direct Firestore query in case API auth is unavailable.
+          const q = query(collection(db, "orders"), where("userId", "==", currentUser.uid));
+          const querySnapshot = await getDocs(q);
+          const fetchedOrders: OrderRecord[] = querySnapshot.docs.map((item) => ({
+            id: item.id,
+            ...(item.data() as Omit<OrderRecord, "id">),
+          }));
+          setOrders(fetchedOrders);
+        }
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
       } finally {

@@ -4,8 +4,9 @@ import { adminDb } from "@/lib/firebase-admin";
 
 type OrderRecord = {
   orderId: string;
-  userId: string;
+  userId?: string | null;
   userEmail?: string | null;
+  userEmailLower?: string | null;
   planId?: string | null;
   planName?: string | null;
   frequency?: string | null;
@@ -21,6 +22,10 @@ type OrderRecord = {
   updatedAt?: string | null;
 };
 
+function normalizeEmail(email?: string | null) {
+  return (email || "").trim().toLowerCase();
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { response: authError, user } = await requireAuth(request);
@@ -35,15 +40,83 @@ export async function GET(request: NextRequest) {
         { status: 503 }
       );
     }
+    const db = adminDb;
 
-    const snapshot = await adminDb
+    const normalizedEmail = normalizeEmail(user.email);
+    const orderMap = new Map<string, { id: string; data: OrderRecord }>();
+
+    const ownOrders = await db
       .collection("orders")
       .where("userId", "==", user.uid)
       .get();
+    ownOrders.docs.forEach((doc) => {
+      orderMap.set(doc.id, { id: doc.id, data: doc.data() as OrderRecord });
+    });
 
-    const orders = snapshot.docs
-      .map((doc) => doc.data() as OrderRecord)
+    if (normalizedEmail) {
+      const byEmailLower = await db
+        .collection("orders")
+        .where("userEmailLower", "==", normalizedEmail)
+        .get();
+      byEmailLower.docs.forEach((doc) => {
+        orderMap.set(doc.id, { id: doc.id, data: doc.data() as OrderRecord });
+      });
+
+      const byEmailExact = await db
+        .collection("orders")
+        .where("userEmail", "==", user.email || "")
+        .get();
+      byEmailExact.docs.forEach((doc) => {
+        orderMap.set(doc.id, { id: doc.id, data: doc.data() as OrderRecord });
+      });
+
+      // Fallback: scan recent orders for case-insensitive email match.
+      if (orderMap.size === 0) {
+        const recent = await db
+          .collection("orders")
+          .orderBy("createdAtMs", "desc")
+          .limit(300)
+          .get();
+        recent.docs.forEach((doc) => {
+          const data = doc.data() as OrderRecord;
+          const email = normalizeEmail(data.userEmail);
+          if (email && email === normalizedEmail) {
+            orderMap.set(doc.id, { id: doc.id, data });
+          }
+        });
+      }
+    }
+
+    const orders = Array.from(orderMap.values())
+      .map(({ id, data }) => ({
+        ...data,
+        orderId: data.orderId || id,
+      }))
       .sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0));
+
+    // Backfill ownership for legacy public-checkout orders.
+    const pendingBackfill = orders.filter(
+      (order) =>
+        !order.userId &&
+        normalizedEmail &&
+        normalizeEmail(order.userEmail) === normalizedEmail
+    );
+    if (pendingBackfill.length > 0) {
+      const batch = db.batch();
+      pendingBackfill.forEach((order) => {
+        const docId = order.orderId;
+        batch.set(
+          db.collection("orders").doc(docId),
+          {
+            userId: user.uid,
+            userEmailLower: normalizedEmail,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+    }
 
     return NextResponse.json({ orders });
   } catch (error: any) {
@@ -54,4 +127,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

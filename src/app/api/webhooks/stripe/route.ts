@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe, PLAN_DETAILS } from "@/lib/stripe";
-import { adminDb } from "@/lib/firebase-admin";
+import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import Stripe from "stripe";
 import {
   buildOrderNumber,
@@ -66,6 +66,10 @@ function inferPlanByAmount(amountTotal?: number | null, currency?: string | null
     return { planId: null as string | null, planName: null as string | null };
   }
   return { planId: found[0], planName: found[1].name };
+}
+
+function normalizeEmail(email?: string | null) {
+  return (email || "").trim().toLowerCase();
 }
 
 async function getStripeBillingLinks(session: Stripe.Checkout.Session) {
@@ -159,12 +163,33 @@ async function resolveUserIdForSession(session: Stripe.Checkout.Session) {
   if (clientRef.userId) return clientRef.userId;
 
   const email = session.customer_details?.email ?? session.customer_email ?? null;
-  if (!email || !adminDb) return null;
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+
+  if (adminAuth) {
+    try {
+      const authUser = await adminAuth.getUserByEmail(normalizedEmail);
+      if (authUser?.uid) return authUser.uid;
+    } catch {
+      // continue fallback lookup
+    }
+  }
+
+  if (!adminDb) return null;
 
   try {
     const match = await adminDb.collection("users").where("email", "==", email).limit(1).get();
     if (!match.empty) {
       return match.docs[0].id;
+    }
+
+    const normalizedMatch = await adminDb
+      .collection("users")
+      .where("email", "==", normalizedEmail)
+      .limit(1)
+      .get();
+    if (!normalizedMatch.empty) {
+      return normalizedMatch.docs[0].id;
     }
   } catch (error) {
     console.warn("[webhook] Failed to lookup user by email", error);
@@ -178,8 +203,7 @@ async function upsertOrderFromCheckoutSession(session: Stripe.Checkout.Session) 
 
   const userId = await resolveUserIdForSession(session);
   if (!userId) {
-    console.warn(`[webhook] Unable to resolve user for session ${session.id}`);
-    return;
+    console.warn(`[webhook] Unable to resolve user for session ${session.id}, storing order by email only.`);
   }
 
   const { planId, planName, frequency } = await resolveSessionPlanDetails(session);
@@ -190,13 +214,16 @@ async function upsertOrderFromCheckoutSession(session: Stripe.Checkout.Session) 
   const customerId =
     typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
   const orderNumber = buildOrderNumber(session.id, createdAtMs);
+  const checkoutEmail = session.customer_details?.email ?? session.customer_email ?? null;
+  const normalizedCheckoutEmail = normalizeEmail(checkoutEmail);
 
   await adminDb.collection("orders").doc(session.id).set(
     {
       orderId: session.id,
       orderNumber,
-      userId,
-      userEmail: session.customer_details?.email ?? session.customer_email ?? null,
+      userId: userId ?? null,
+      userEmail: checkoutEmail,
+      userEmailLower: normalizedCheckoutEmail || null,
       planId,
       planName,
       frequency,
@@ -363,6 +390,8 @@ export async function POST(request: NextRequest) {
         if (userId && planId && adminDb) {
           await adminDb.collection("users").doc(userId).set(
             {
+              emailLower:
+                normalizeEmail(session.customer_details?.email ?? session.customer_email ?? null) || null,
               plan: planId,
               subscriptionId: session.subscription,
               customerId: session.customer,

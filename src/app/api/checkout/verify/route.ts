@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe, PLAN_DETAILS } from "@/lib/stripe";
 import { verifyAuthToken } from "@/lib/api-auth";
-import { adminDb } from "@/lib/firebase-admin";
+import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import {
   buildOrderNumber,
   getPackageItems,
@@ -34,6 +34,40 @@ function inferPlanByAmount(amountTotal?: number | null, currency?: string | null
   const found = Object.entries(SERVICE_PLAN_CATALOG).find(([, v]) => v.amountUsd === amountTotal);
   if (!found) return { planId: null as string | null, planName: null as string | null };
   return { planId: found[0], planName: found[1].name };
+}
+
+function normalizeEmail(email?: string | null) {
+  return (email || "").trim().toLowerCase();
+}
+
+async function resolveUserIdByEmail(email?: string | null) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  if (adminAuth) {
+    try {
+      const authUser = await adminAuth.getUserByEmail(normalized);
+      if (authUser?.uid) return authUser.uid;
+    } catch {
+      // continue Firestore fallback
+    }
+  }
+
+  if (!adminDb) return null;
+  try {
+    const exact = await adminDb.collection("users").where("email", "==", email).limit(1).get();
+    if (!exact.empty) return exact.docs[0].id;
+    const normalizedMatch = await adminDb
+      .collection("users")
+      .where("email", "==", normalized)
+      .limit(1)
+      .get();
+    if (!normalizedMatch.empty) return normalizedMatch.docs[0].id;
+  } catch (error) {
+    console.warn("[checkout-verify] Failed to resolve user by email", error);
+  }
+
+  return null;
 }
 
 async function getStripeBillingLinks(session: any) {
@@ -139,13 +173,16 @@ export async function GET(request: NextRequest) {
     const customerId =
       typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
     const orderNumber = buildOrderNumber(session.id, createdAtMs);
-    const effectiveUserId = sessionUserId ?? authUser?.uid ?? null;
     const effectiveUserEmail =
       session.customer_details?.email ?? session.customer_email ?? authUser?.email ?? null;
+    const resolvedUserByEmail = await resolveUserIdByEmail(effectiveUserEmail);
+    const effectiveUserId = sessionUserId ?? authUser?.uid ?? resolvedUserByEmail ?? null;
+    const effectiveUserEmailLower = normalizeEmail(effectiveUserEmail);
 
     if (effectiveUserId && planId && adminDb) {
       await adminDb.collection("users").doc(effectiveUserId).set(
         {
+          emailLower: effectiveUserEmailLower || null,
           plan: planId,
           subscriptionId,
           customerId,
@@ -162,6 +199,7 @@ export async function GET(request: NextRequest) {
           orderNumber,
           userId: effectiveUserId,
           userEmail: effectiveUserEmail,
+          userEmailLower: effectiveUserEmailLower || null,
           planId: planId ?? null,
           planName: planName ?? planId ?? null,
           frequency: frequency ?? null,
