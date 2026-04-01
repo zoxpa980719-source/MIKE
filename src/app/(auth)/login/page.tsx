@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
@@ -12,7 +12,7 @@ import {
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, EyeOff, Sparkles, Mail } from "lucide-react";
 import Image from "next/image";
 
@@ -50,6 +50,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -66,6 +67,13 @@ export default function LoginPage() {
 
   const email = form.watch("email");
   const password = form.watch("password");
+
+  useEffect(() => {
+    const emailFromQuery = searchParams.get("email");
+    if (emailFromQuery) {
+      form.setValue("email", emailFromQuery);
+    }
+  }, [form, searchParams]);
 
   const onSubmit = async (values: LoginFormValues) => {
     setIsLoading(true);
@@ -108,10 +116,19 @@ export default function LoginPage() {
         router.push("/dashboard");
       }
     } catch (err: any) {
-      setError(err.message || "Invalid email or password. Please try again.");
+      const code = err?.code as string | undefined;
+      const message =
+        code === "auth/invalid-credential" ||
+        code === "auth/wrong-password" ||
+        code === "auth/user-not-found"
+          ? "Email or password is incorrect. Please try again."
+          : code === "auth/invalid-email"
+            ? "Invalid email format. Please check and try again."
+            : err?.message || "Invalid email or password. Please try again.";
+      setError(message);
       toast({
         title: "Login Failed",
-        description: err.message,
+        description: message,
         variant: "destructive",
       });
     } finally {

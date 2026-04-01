@@ -105,12 +105,24 @@ export default function SignupPage() {
         router.push("/dashboard");
       }
     } catch (err: any) {
-      setError(err.message || "Something went wrong. Please try again.");
+      const code = err?.code as string | undefined;
+      const message =
+        code === "auth/email-already-in-use"
+          ? "This email is already registered. Please sign in instead."
+          : code === "auth/invalid-email"
+            ? "Invalid email format. Please check and try again."
+            : code === "auth/weak-password"
+              ? "Password is too weak. Please use at least 6 characters."
+              : err?.message || "Something went wrong. Please try again.";
+      setError(message);
       toast({
         title: "Signup Failed",
-        description: err.message,
+        description: message,
         variant: "destructive",
       });
+      if (code === "auth/email-already-in-use") {
+        router.push(`/login?email=${encodeURIComponent(values.email)}`);
+      }
     } finally {
       setIsLoading(false);
     }
