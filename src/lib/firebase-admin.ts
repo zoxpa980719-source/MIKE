@@ -7,6 +7,17 @@ let adminDb: Firestore | null = null;
 let adminAuth: Auth | null = null;
 let app: App | null = null;
 
+function normalizePrivateKey(raw?: string) {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  const unquoted =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ? trimmed.slice(1, -1)
+      : trimmed;
+  return unquoted.replace(/\\n/g, "\n");
+}
+
 function initializeFirebaseAdmin() {
   // Check if already initialized
   if (getApps().length > 0) {
@@ -19,7 +30,7 @@ function initializeFirebaseAdmin() {
   // Check if credentials are available
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
 
   if (!projectId || !clientEmail || !privateKey) {
     console.warn("Firebase Admin credentials not configured. Some features may not work.");
@@ -31,7 +42,7 @@ function initializeFirebaseAdmin() {
       credential: cert({
         projectId,
         clientEmail,
-        privateKey: privateKey.replace(/\\n/g, "\n"),
+        privateKey,
       }),
     });
     adminDb = getFirestore(app);
@@ -45,4 +56,3 @@ function initializeFirebaseAdmin() {
 initializeFirebaseAdmin();
 
 export { adminDb, adminAuth };
-

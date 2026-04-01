@@ -31,45 +31,93 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const auth = getAuth(app);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (nextUser) => {
+    let unsubscribeProfile: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (nextUser) => {
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = null;
+      }
+
       setUser(nextUser);
 
       if (nextUser) {
-        try {
-          const token = await nextUser.getIdToken();
-          const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-          const secureAttr = isHttps ? "; Secure" : "";
-          document.cookie = `__session=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${secureAttr}`;
-        } catch (error) {
-          console.error("Failed to set session cookie:", error);
-        }
+        setLoading(true);
+
+        void (async () => {
+          try {
+            const token = await nextUser.getIdToken();
+            const isHttps =
+              typeof window !== "undefined" && window.location.protocol === "https:";
+            const secureAttr = isHttps ? "; Secure" : "";
+            document.cookie = `__session=${token}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${secureAttr}`;
+          } catch (error) {
+            console.error("Failed to set session cookie:", error);
+          }
+        })();
 
         const isPrimaryAdmin = normalizeEmail(nextUser.email) === PRIMARY_ADMIN_EMAIL;
         const docRef = doc(db, "users", nextUser.uid);
 
-        const unsubscribeProfile = onSnapshot(docRef, (snap) => {
-          if (snap.exists()) {
-            const profileData = snap.data() as UserProfile;
-            profileData.plan = "pro";
+        unsubscribeProfile = onSnapshot(
+          docRef,
+          (snap) => {
+            if (snap.exists()) {
+              const profileData = snap.data() as UserProfile;
+              profileData.plan = "pro";
 
-            const effectiveRole = isPrimaryAdmin ? "admin" : profileData.role;
-            setRole(effectiveRole);
-            setUserProfile({ ...profileData, role: effectiveRole });
-          } else if (isPrimaryAdmin) {
-            setRole("admin");
-            setUserProfile({
-              uid: nextUser.uid,
-              email: nextUser.email,
-              displayName: nextUser.displayName || "Mike",
-              role: "admin",
-              plan: "pro",
-            });
-          }
+              const effectiveRole = isPrimaryAdmin ? "admin" : profileData.role;
+              setRole(effectiveRole);
+              setUserProfile({ ...profileData, role: effectiveRole });
+            } else if (isPrimaryAdmin) {
+              setRole("admin");
+              setUserProfile({
+                uid: nextUser.uid,
+                email: nextUser.email,
+                displayName: nextUser.displayName || "Mike",
+                role: "admin",
+                plan: "pro",
+              });
+            } else {
+              // Fallback profile so UI will not stay in infinite loading.
+              setRole("employee");
+              setUserProfile({
+                uid: nextUser.uid,
+                email: nextUser.email,
+                displayName: nextUser.displayName || "",
+                role: "employee",
+                plan: "pro",
+              });
+            }
 
-          setLoading(false);
-        });
+            setLoading(false);
+          },
+          (error) => {
+            console.error("Failed to subscribe user profile:", error);
+            if (isPrimaryAdmin) {
+              setRole("admin");
+              setUserProfile({
+                uid: nextUser.uid,
+                email: nextUser.email,
+                displayName: nextUser.displayName || "Mike",
+                role: "admin",
+                plan: "pro",
+              });
+            } else {
+              setRole("employee");
+              setUserProfile({
+                uid: nextUser.uid,
+                email: nextUser.email,
+                displayName: nextUser.displayName || "",
+                role: "employee",
+                plan: "pro",
+              });
+            }
+            setLoading(false);
+          },
+        );
 
-        return () => unsubscribeProfile();
+        return;
       }
 
       document.cookie = "__session=; path=/; max-age=0";
@@ -78,7 +126,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
+      unsubscribeAuth();
+    };
   }, [auth]);
 
   return <AuthContext.Provider value={{ user, loading, role, userProfile }}>{children}</AuthContext.Provider>;

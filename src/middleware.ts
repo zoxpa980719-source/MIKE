@@ -19,6 +19,8 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks",
   "/api/checkout/public-service",
   "/api/checkout/verify",
+  "/api/auth/bootstrap-profile",
+  "/api/auth/password-reset",
 ];
 
 // Static file extensions to skip

@@ -7,6 +7,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { Check, CircleDollarSign, Clock3, Crown, Package, ShoppingCart, Star, UserCircle } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useToast } from "@/hooks/use-toast";
 
 type UserProfile = {
   displayName?: string;
@@ -173,6 +174,7 @@ function inferPlanIdByAmount(amountTotal?: number) {
 
 export default function DashboardPage() {
   const { locale } = useLanguage();
+  const { toast } = useToast();
   const t = copy[locale];
   const consultName = locale === "zh" ? "咨询服务" : "Consulting Service";
   const consultBenefits =
@@ -235,6 +237,54 @@ export default function DashboardPage() {
   const [checkoutPlanId, setCheckoutPlanId] = useState<string | null>(null);
   const [sendingLatestReceipt, setSendingLatestReceipt] = useState(false);
   const [latestReceiptResult, setLatestReceiptResult] = useState<string>("");
+  const [syncingOrders, setSyncingOrders] = useState(false);
+
+  const syncOrdersNow = async (idToken: string) => {
+    setSyncingOrders(true);
+    try {
+      const syncResponse = await fetch("/api/orders/sync", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      const syncData = await syncResponse.json().catch(() => ({}));
+      if (!syncResponse.ok) {
+        throw new Error(syncData.error || "Failed to sync orders");
+      }
+
+      const refreshedResponse = await fetch("/api/orders", {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+      if (refreshedResponse.ok) {
+        const refreshedData = await refreshedResponse.json();
+        const refreshedOrders: OrderRecord[] = (refreshedData?.orders || []).map((item: any) => ({
+          id: item.orderId || item.id,
+          ...item,
+        }));
+        setOrders(refreshedOrders);
+      }
+
+      toast({
+        title: locale === "zh" ? "订单已同步" : "Orders synced",
+        description:
+          locale === "zh"
+            ? `已更新 ${syncData.syncedFromStripe || 0} 条 Stripe 订单`
+            : `Updated ${syncData.syncedFromStripe || 0} Stripe orders`,
+      });
+    } catch (error: any) {
+      toast({
+        title: locale === "zh" ? "同步失败" : "Sync failed",
+        description:
+          error?.message || (locale === "zh" ? "请稍后重试。" : "Please try again."),
+        variant: "destructive",
+      });
+    } finally {
+      setSyncingOrders(false);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -246,19 +296,31 @@ export default function DashboardPage() {
         return;
       }
 
+      const fallbackProfile: UserProfile = {
+        uid: currentUser.uid,
+        displayName:
+          currentUser.displayName ||
+          currentUser.email?.split("@")[0] ||
+          "YINHNG Member",
+        firstName:
+          currentUser.displayName || currentUser.email?.split("@")[0] || undefined,
+        email: currentUser.email || undefined,
+        plan: "free",
+      };
+
+      // Set identity first so checkout is not blocked by profile read failures.
+      setCurrentUserId(currentUser.uid);
+      setUserProfile(fallbackProfile);
+
       try {
         const profileRef = doc(db, "publicProfiles", currentUser.uid);
         const profileSnap = await getDoc(profileRef);
         if (profileSnap.exists()) {
-          setUserProfile(profileSnap.data() as UserProfile);
-        } else {
           setUserProfile({
-            displayName: currentUser.displayName || "YINHNG Member",
-            email: currentUser.email || undefined,
-            plan: "free",
+            ...fallbackProfile,
+            ...(profileSnap.data() as UserProfile),
           });
         }
-        setCurrentUserId(currentUser.uid);
 
         try {
           const idToken = await currentUser.getIdToken();
@@ -274,6 +336,11 @@ export default function DashboardPage() {
               ...item,
             }));
             setOrders(fetchedOrders);
+
+            // If no order is visible yet, force a one-time sync from Stripe by email.
+            if (fetchedOrders.length === 0 && currentUser.email) {
+              await syncOrdersNow(idToken);
+            }
           } else {
             throw new Error("Failed to load orders from API");
           }
@@ -289,6 +356,8 @@ export default function DashboardPage() {
         }
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
+        // Keep auth-derived fallback profile, so user can still checkout.
+        setUserProfile((prev) => prev || fallbackProfile);
       } finally {
         setLoading(false);
       }
@@ -308,8 +377,17 @@ export default function DashboardPage() {
   );
 
   const startCheckout = async (trackingPlanId: string, paymentLink?: string) => {
-    if (!currentUserId) {
-      window.alert("Please sign in before purchasing.");
+    const activeUser = auth.currentUser;
+    const effectiveUserId = currentUserId || activeUser?.uid || "";
+    if (!activeUser || !effectiveUserId) {
+      toast({
+        title: locale === "zh" ? "请先登录" : "Sign in required",
+        description:
+          locale === "zh"
+            ? "请先登录后再购买服务。"
+            : "Please sign in before purchasing.",
+        variant: "destructive",
+      });
       return;
     }
     if (checkoutPlanId) return;
@@ -320,10 +398,12 @@ export default function DashboardPage() {
 
     setCheckoutPlanId(trackingPlanId);
     try {
+      const idToken = await activeUser.getIdToken();
       const response = await fetch("/api/checkout/service", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({ planId: trackingPlanId }),
       });
@@ -338,7 +418,13 @@ export default function DashboardPage() {
       throw new Error("Checkout URL is missing");
     } catch (error: any) {
       console.error("Service checkout failed:", error);
-      window.alert(error?.message || "Checkout failed. Please try again.");
+      toast({
+        title: locale === "zh" ? "支付发起失败" : "Checkout failed",
+        description:
+          error?.message ||
+          (locale === "zh" ? "请稍后重试。" : "Checkout failed. Please try again."),
+        variant: "destructive",
+      });
       setCheckoutPlanId(null);
     }
   };
@@ -378,6 +464,12 @@ export default function DashboardPage() {
     } finally {
       setSendingLatestReceipt(false);
     }
+  };
+
+  const handleManualOrderSync = async () => {
+    if (!auth.currentUser) return;
+    const idToken = await auth.currentUser.getIdToken();
+    await syncOrdersNow(idToken);
   };
 
   const planNameMap: Record<string, string> = {
@@ -526,6 +618,20 @@ export default function DashboardPage() {
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-2xl font-bold tracking-tight">{t.myOrders}</h2>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleManualOrderSync()}
+              disabled={syncingOrders}
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {syncingOrders
+                ? locale === "zh"
+                  ? "同步中..."
+                  : "Syncing..."
+                : locale === "zh"
+                  ? "同步订单"
+                  : "Sync Orders"}
+            </button>
             <button
               type="button"
               onClick={() => void sendLatestReceiptTest()}

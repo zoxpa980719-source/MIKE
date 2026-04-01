@@ -7,7 +7,6 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -33,13 +32,49 @@ export default function ForgotPasswordPage() {
 
   const onSubmit = async (values: ForgotPasswordFormValues) => {
     try {
-      await sendPasswordResetEmail(auth, values.email);
+      const response = await fetch("/api/auth/password-reset", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: values.email }),
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      const payload = contentType.includes("application/json")
+        ? await response.json().catch(() => ({}))
+        : { error: "Reset service returned an unexpected response." };
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to send reset email");
+      }
+
       toast({
         title: 'Check Your Email',
         description: 'If an account with that email exists, we have sent a password reset link.',
       });
       router.push('/login');
     } catch (error: any) {
+      try {
+        await sendPasswordResetEmail(auth, values.email);
+        toast({
+          title: 'Check Your Email',
+          description: 'If an account with that email exists, we have sent a password reset link.',
+        });
+        router.push('/login');
+        return;
+      } catch (fallbackError: any) {
+        const fallbackCode = fallbackError?.code as string | undefined;
+        if (fallbackCode === 'auth/user-not-found') {
+          toast({
+            title: 'Check Your Email',
+            description: 'If an account with that email exists, we have sent a password reset link.',
+          });
+          router.push('/login');
+          return;
+        }
+      }
+
       toast({
         title: 'Error',
         description: error.message,

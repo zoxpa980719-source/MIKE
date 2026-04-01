@@ -72,6 +72,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   experimental: {
+    // Stability workarounds for local dev on Windows.
     optimizePackageImports: [
       "lucide-react",
       "@radix-ui/react-icons",
@@ -80,6 +81,14 @@ const nextConfig: NextConfig = {
       "recharts",
       "react-icons",
     ],
+    devtoolSegmentExplorer: false,
+  },
+  webpack: (config, { dev }) => {
+    if (dev) {
+      // Prevent flaky missing-chunk issues in local dev sessions.
+      config.cache = false;
+    }
+    return config;
   },
   compiler: {
     removeConsole:

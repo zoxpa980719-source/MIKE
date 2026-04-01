@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,6 +89,7 @@ export default function AdminOrdersPage() {
   const router = useRouter();
   const { user, userProfile, loading: authLoading } = useAuth();
   const { locale } = useLanguage();
+  const { toast } = useToast();
 
   const t = locale === "zh"
     ? {
@@ -298,9 +300,16 @@ export default function AdminOrdersPage() {
         throw new Error(data.error || "Resend failed");
       }
       await loadOrders();
-      alert(type === "confirmation" ? t.resentConfirmOk : t.resentReceiptOk);
+      toast({
+        title: type === "confirmation" ? t.resendConfirm : t.resendReceipt,
+        description: type === "confirmation" ? t.resentConfirmOk : t.resentReceiptOk,
+      });
     } catch (err: any) {
-      alert(err?.message || "Failed to resend email.");
+      toast({
+        title: type === "confirmation" ? t.resendConfirm : t.resendReceipt,
+        description: err?.message || "Failed to resend email.",
+        variant: "destructive",
+      });
     } finally {
       setResendingOrderId(null);
     }

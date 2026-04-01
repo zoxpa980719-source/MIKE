@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  updateProfile,
+  type User,
+} from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useState } from "react";
@@ -29,6 +33,28 @@ const signupSchema = z.object({
 });
 
 type SignupFormValues = z.infer<typeof signupSchema>;
+const PRIMARY_ADMIN_EMAIL = "mike@yinhng.com";
+
+function normalizeEmail(email?: string | null) {
+  return (email || "").trim().toLowerCase();
+}
+
+async function bootstrapProfileOnServer(user: User, userData: Record<string, any>) {
+  const token = await user.getIdToken(true);
+  const response = await fetch("/api/auth/bootstrap-profile", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(userData),
+  });
+
+  if (!response.ok) {
+    const fallbackError = await response.text().catch(() => "");
+    throw new Error(fallbackError || `Bootstrap failed with ${response.status}`);
+  }
+}
 
 export default function SignupPage() {
   const router = useRouter();
@@ -64,7 +90,12 @@ export default function SignupPage() {
         displayName: values.fullName,
       });
 
-      const adminEmails = await getAdminEmails();
+      let adminEmails: string[] = [];
+      try {
+        adminEmails = await getAdminEmails();
+      } catch (adminEmailError) {
+        console.error("Failed to load admin email list during signup:", adminEmailError);
+      }
       const isAdmin = values.email ? adminEmails.includes(values.email.toLowerCase()) : false;
       const role = isAdmin ? "admin" : "employee";
 
@@ -81,17 +112,33 @@ export default function SignupPage() {
         lastName: lastName,
       };
 
-      await setDoc(doc(db, "users", user.uid), userData);
-      await setDoc(
-        doc(db, "publicProfiles", user.uid),
-        toPublicProfile(userData),
-      );
+      try {
+        await bootstrapProfileOnServer(user, userData);
+      } catch {
+        try {
+          // Local fallback when server credentials are not configured.
+          await setDoc(doc(db, "users", user.uid), userData, { merge: true });
+          await setDoc(
+            doc(db, "publicProfiles", user.uid),
+            toPublicProfile(userData),
+            {
+              merge: true,
+            },
+          );
+        } catch (profileSyncError) {
+          console.error("Failed to sync profile during signup:", profileSyncError);
+        }
+      }
 
       // Send welcome email
-      const emailSent = await sendWelcomeEmailDirect(
-        values.email,
-        values.fullName,
-      );
+      try {
+        await sendWelcomeEmailDirect(
+          values.email,
+          values.fullName,
+        );
+      } catch (welcomeEmailError) {
+        console.error("Failed to send signup welcome email:", welcomeEmailError);
+      }
 
       toast({
         title: "Account Created",
@@ -105,6 +152,23 @@ export default function SignupPage() {
         router.push("/dashboard");
       }
     } catch (err: any) {
+      const authenticatedUser = auth.currentUser;
+      if (
+        authenticatedUser &&
+        normalizeEmail(authenticatedUser.email) === normalizeEmail(values.email)
+      ) {
+        console.warn(
+          "Signup succeeded but a follow-up sync step failed; continuing with signed-in session.",
+          err,
+        );
+        router.push(
+          normalizeEmail(authenticatedUser.email) === PRIMARY_ADMIN_EMAIL
+            ? "/admin"
+            : "/dashboard",
+        );
+        return;
+      }
+
       const code = err?.code as string | undefined;
       const message =
         code === "auth/email-already-in-use"
@@ -244,7 +308,7 @@ export default function SignupPage() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   {...form.register("password")}
                   className="h-12 pr-10 bg-background border-border/60 focus:border-primary"
                 />

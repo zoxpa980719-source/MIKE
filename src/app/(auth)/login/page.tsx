@@ -9,6 +9,7 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  type User,
 } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
@@ -48,6 +49,66 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+async function bootstrapProfileOnServer(user: User, userData: Record<string, any>) {
+  const token = await user.getIdToken(true);
+  const response = await fetch("/api/auth/bootstrap-profile", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(userData),
+  });
+
+  if (!response.ok) {
+    const fallbackError = await response.text().catch(() => "");
+    throw new Error(fallbackError || `Bootstrap failed with ${response.status}`);
+  }
+}
+
+function buildFallbackUserData(user: User, emailHint?: string | null) {
+  const resolvedEmail = user.email || emailHint || "";
+  const displayName =
+    user.displayName ||
+    resolvedEmail.split("@")[0] ||
+    "User";
+
+  return {
+    uid: user.uid,
+    displayName,
+    email: resolvedEmail,
+    role: isPrimaryAdminEmail(resolvedEmail) ? "admin" : "employee",
+    firstName: displayName,
+    lastName: "",
+    photoURL: user.photoURL || "",
+  };
+}
+
+function isFirestorePermissionError(error: unknown) {
+  const code =
+    typeof (error as { code?: unknown })?.code === "string"
+      ? String((error as { code?: string }).code)
+      : "";
+  const message =
+    typeof (error as { message?: unknown })?.message === "string"
+      ? String((error as { message?: string }).message)
+      : "";
+
+  return code.includes("permission-denied") || /insufficient permissions/i.test(message);
+}
+
+function redirectByRole(router: ReturnType<typeof useRouter>, role?: string | null) {
+  if (role === "admin") {
+    router.push("/admin");
+    return;
+  }
+  if (role === "employer") {
+    router.push("/employer/dashboard");
+    return;
+  }
+  router.push("/dashboard");
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -85,37 +146,71 @@ export default function LoginPage() {
         values.password,
       );
       const user = userCredential.user;
-
       const userDocRef = doc(db, "users", user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      let userData = userDocSnap.exists() ? userDocSnap.data() : null;
+      const fallbackData = buildFallbackUserData(user, values.email);
+      let userData: Record<string, any> = fallbackData;
+      let hasStoredProfile = false;
 
-      // Handle first login automation
-      if (userDocSnap.exists()) {
-        await setDoc(
-          doc(db, "publicProfiles", user.uid),
-          toPublicProfile({ uid: user.uid, ...userData }),
-          { merge: true },
-        );
-        await handleFirstLogin(
-          user.uid,
-          user.email!,
-          userData?.displayName || user.email!,
-        );
+      try {
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          hasStoredProfile = true;
+          userData = {
+            ...fallbackData,
+            ...userDocSnap.data(),
+          };
+        }
+      } catch (profileError) {
+        console.error("Profile read failed during login, continuing with fallback profile:", profileError);
       }
 
-      if (isPrimaryAdminEmail(user.email) && userData?.role !== "admin") {
-        userData = { ...(userData || {}), role: "admin" };
+      if (isPrimaryAdminEmail(user.email) && userData.role !== "admin") {
+        userData = { ...userData, role: "admin" };
       }
 
-      if (userData?.role === "admin") {
-        router.push("/admin");
-      } else if (userData?.role === "employer") {
-        router.push("/employer/dashboard");
-      } else {
-        router.push("/dashboard");
+      try {
+        await bootstrapProfileOnServer(user, { uid: user.uid, ...userData });
+      } catch {
+        try {
+          await setDoc(
+            doc(db, "publicProfiles", user.uid),
+            toPublicProfile({ uid: user.uid, ...userData }),
+            { merge: true },
+          );
+        } catch (syncError) {
+          console.error("Failed to sync user profile on login:", syncError);
+        }
       }
+
+      if (hasStoredProfile) {
+        try {
+          await handleFirstLogin(
+            user.uid,
+            user.email || fallbackData.email,
+            userData?.displayName || user.email || fallbackData.email,
+          );
+        } catch (automationError) {
+          console.error("First-login automation failed:", automationError);
+        }
+      }
+
+      redirectByRole(router, userData?.role);
     } catch (err: any) {
+      const authenticatedUser = auth.currentUser;
+      if (
+        authenticatedUser &&
+        normalizeEmail(authenticatedUser.email) === normalizeEmail(values.email) &&
+        isFirestorePermissionError(err)
+      ) {
+        console.warn(
+          "Login succeeded but profile sync hit a permission error; continuing with fallback profile.",
+          err,
+        );
+        const fallbackData = buildFallbackUserData(authenticatedUser, values.email);
+        redirectByRole(router, fallbackData.role);
+        return;
+      }
+
       const code = err?.code as string | undefined;
       const message =
         code === "auth/invalid-credential" ||
@@ -143,11 +238,23 @@ export default function LoginPage() {
       const user = result.user;
 
       const userDocRef = doc(db, "users", user.uid);
-      const userDocSnap = await getDoc(userDocRef);
+      let userDocData: Record<string, any> | null = null;
 
-      if (!userDocSnap.exists()) {
+      try {
+        const userDocSnap = await getDoc(userDocRef);
+        userDocData = userDocSnap.exists() ? userDocSnap.data() : null;
+      } catch (profileError) {
+        console.error("Profile read failed during Google sign-in, continuing with fallback profile:", profileError);
+      }
+
+      if (!userDocData) {
         // New user logic
-        const adminEmails = await getAdminEmails();
+        let adminEmails: string[] = [];
+        try {
+          adminEmails = await getAdminEmails();
+        } catch (adminEmailError) {
+          console.error("Failed to load admin email list during Google sign-in:", adminEmailError);
+        }
         const normalizedEmail = normalizeEmail(user.email);
         const isAdmin = isPrimaryAdminEmail(user.email) || adminEmails.includes(normalizedEmail);
 
@@ -169,54 +276,77 @@ export default function LoginPage() {
           ...(role === "employer" && { companyName: user.displayName }),
         };
 
-        await setDoc(userDocRef, userData);
-        await setDoc(
-          doc(db, "publicProfiles", user.uid),
-          toPublicProfile(userData as any),
-          { merge: true },
-        );
+        try {
+          await bootstrapProfileOnServer(user, userData);
+        } catch {
+          try {
+            await setDoc(userDocRef, userData, { merge: true });
+            await setDoc(
+              doc(db, "publicProfiles", user.uid),
+              toPublicProfile(userData as any),
+              { merge: true },
+            );
+          } catch (syncError) {
+            console.error("Failed to persist Google sign-in fallback profile:", syncError);
+          }
+        }
 
-        const emailSent = await sendWelcomeEmailDirect(
-          user.email!,
-          user.displayName!,
-        );
+        try {
+          await sendWelcomeEmailDirect(
+            user.email!,
+            user.displayName!,
+          );
+        } catch (welcomeError) {
+          console.error("Failed to send Google welcome email:", welcomeError);
+        }
 
         // Handle first login for new Google users
-        await handleFirstLogin(user.uid, user.email!, user.displayName!);
+        try {
+          await handleFirstLogin(user.uid, user.email!, user.displayName!);
+        } catch (automationError) {
+          console.error("Google first-login automation failed:", automationError);
+        }
 
         toast({
           title: "Account Created",
           description: "Welcome! Your account has been set up.",
         });
 
-        if (role === "admin") {
-          router.push("/admin");
-        } else if (role === "employer") {
-          router.push("/employer/dashboard");
-        } else {
-          router.push("/dashboard");
-        }
+        redirectByRole(router, role);
       } else {
         // Existing user logic
-        const userData = userDocSnap.data();
+        const userData = { ...userDocData };
         if (isPrimaryAdminEmail(user.email) && userData.role !== "admin") {
           userData.role = "admin";
         }
 
-        await setDoc(
-          doc(db, "publicProfiles", user.uid),
-          toPublicProfile({ uid: user.uid, ...userData }),
-          { merge: true },
-        );
-        if (userData.role === "admin") {
-          router.push("/admin");
-        } else if (userData.role === "employer") {
-          router.push("/employer/dashboard");
-        } else {
-          router.push("/dashboard");
+        try {
+          await bootstrapProfileOnServer(user, { uid: user.uid, ...userData });
+        } catch {
+          try {
+            await setDoc(
+              doc(db, "publicProfiles", user.uid),
+              toPublicProfile({ uid: user.uid, ...userData }),
+              { merge: true },
+            );
+          } catch (syncError) {
+            console.error("Failed to sync public profile for existing user:", syncError);
+          }
         }
+        redirectByRole(router, userData.role);
       }
     } catch (err: any) {
+      const authenticatedUser = auth.currentUser;
+      if (authenticatedUser && isFirestorePermissionError(err)) {
+        console.warn(
+          "Google sign-in succeeded but profile sync hit a permission error; continuing with fallback profile.",
+          err,
+        );
+        const fallbackData = buildFallbackUserData(authenticatedUser, authenticatedUser.email);
+        redirectByRole(router, fallbackData.role);
+        return;
+      }
+
       toast({
         title: "Google Sign-In Failed",
         description: err.message,
@@ -237,7 +367,6 @@ export default function LoginPage() {
             href="/"
             className="flex items-center gap-2 text-lg font-semibold"
           >
-            {/* 替换了左侧大屏幕的Logo */}
             <span className="text-2xl font-extrabold tracking-[0.25em] uppercase text-foreground drop-shadow-sm">
               YINHNG
             </span>
@@ -278,7 +407,6 @@ export default function LoginPage() {
         <div className="w-full max-w-[420px]">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center gap-2 text-lg font-semibold mb-12">
-            {/* 替换了移动端小屏幕的Logo */}
             <span className="text-2xl font-extrabold tracking-[0.25em] uppercase text-foreground drop-shadow-sm">
               YINHNG
             </span>
@@ -325,7 +453,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   {...form.register("password")}
                   className="h-12 pr-10 bg-background border-border/60 focus:border-primary"
                 />
